@@ -1182,6 +1182,38 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "validator rejects weakened project sessions retro completion contract",
+    run: () => {
+      const fixture = newLibraryFixture("project-retro-anti-false-completion");
+      writeText(path.join(fixture, ".opencode", "skills", "project-sessions-retro", "SKILL.md"), lines([
+        "---",
+        "name: project-sessions-retro",
+        "description: Use project-sessions-retro for current-project session analysis.",
+        "---",
+        "",
+        "# Demo Skill",
+        "",
+        "Use project-sessions-retro for current-project session analysis.",
+        "",
+        "Default mode is read-only analysis. Write generated ledgers only when the user explicitly grants that scope.",
+        "",
+        "1. Build a redacted evidence ledger for all sessions in scope. Keep it inline by default.",
+        "",
+        "## Output",
+        "",
+        "Return Findings and Root-Cause Analysis.",
+        "",
+      ]));
+      const readmePath = path.join(fixture, "README.md");
+      const readme = fs.readFileSync(readmePath, "utf8");
+      writeText(readmePath, readme.replace("- `demo-skill`: Demo skill.", "- `demo-skill`: Demo skill.\n- `project-sessions-retro`: Project session retro."));
+      const result = invokeValidator(fixture);
+      assertFailure(result, "Project session retro must not weaken ledger-first completion contract.");
+      assertOutputContains(result, "anti-false-completion", "Project retro contract failure should name anti-false-completion guard.");
+      assertOutputContains(result, "root `retro.json`", "Project retro contract failure should require root retro.json.");
+    },
+  },
+  {
     name: "validator accepts retro approved privacy boundaries",
     run: () => {
       const fixture = newLibraryFixture("retro-approved-privacy");

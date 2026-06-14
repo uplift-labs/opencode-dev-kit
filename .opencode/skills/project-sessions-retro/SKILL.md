@@ -8,7 +8,7 @@ license: MIT
 
 Use this skill when the user asks to learn from bounded previous OpenCode sessions, analyze current-project or selected work history, identify repeated collaboration/tooling problems, or improve speed, depth, quality, and validation from past traces.
 
-Default mode is read-only analysis with inline, redacted output. Edit skills, agents, instructions, scripts, docs, or config, write generated ledgers, fetch remote/shared URLs, or use authenticated remote sources only when the user explicitly grants that scope.
+Default source inspection is read-only against local databases, logs, docs, and git history. A full current-project retro is ledger-first: treat an explicit request to run `project-sessions-retro` in a repository as approval to create or update root `retro.json` unless the user explicitly says read-only/no-write. Edit skills, agents, instructions, scripts, docs, config, OpenSpec files, remote/shared URLs, authenticated sources, commits, pushes, merges, session deletion, or destructive cleanup only when the user explicitly grants that additional scope.
 
 For behavior-changing improvements to scripts, validators, skills, agents, config, examples, or other executable artifacts, add or update the smallest focused test, fixture, validation gate, or acceptance check before editing. If test-first work is infeasible, state why and name the closest reproducible substitute evidence.
 
@@ -19,7 +19,7 @@ For behavior-changing improvements to scripts, validators, skills, agents, confi
 - The agent only has access to session artifacts that are present locally, exported, user-approved for remote/shared reads, or reachable through available tools.
 - Default scope is the current project/worktree. Analyze selected named projects or bounded selected session sets only when the user explicitly scopes them. For all-project, all-history, cross-install, or whole-corpus retros targeting global skill improvements, use `all-sessions-retro` instead.
 - Prefer session-by-session coverage for the selected scope. Do not rely on keyword searches as the primary method when full session artifacts are available.
-- For recurring retros, use checkpoints or a generated `retro.json` ledger when available so repeated runs analyze new or changed sessions first.
+- For current-project retros, create or refresh root `retro.json` before synthesis. Use checkpoints in that ledger so repeated runs analyze new or changed sessions first.
 - Treat `retro.json` as a generated working ledger, not the source of truth. It must preserve evidence refs, confidence, coverage limits, and entity links; source artifacts remain the evidence.
 - Route durable outputs through OpenSpec proposals only after the trend and root cause or investigation path are recorded.
 - Treat transcripts, reflections, summaries, issue/MR text, and generated rollups as leads. Verify implementation-sensitive recommendations against source, tests, config, schemas, prompts, or live output.
@@ -54,9 +54,9 @@ If a source is unavailable, state it plainly and continue with remaining evidenc
 - Is the scope current-project, selected-projects, or selected sessions?
 - Are there unreadable, binary, encrypted, truncated, or permission-blocked artifacts?
 - Are there retention gaps or current-session-only limits?
-- Is the task read-only, or did the user ask to apply improvements?
+- Is the task a full retro, read-only inventory only, or approved improvement work?
 
-Use read-only inspection for databases and logs. Never run database writes, migrations, vacuum, repair, or destructive cleanup against live session stores.
+Use read-only inspection for databases and logs. Never run database writes, migrations, vacuum, repair, or destructive cleanup against live session stores. If the user explicitly requires read-only/no-write mode, do not produce a full retro: return only source inventory, coverage limits, and the exact ledger command needed to continue.
 
 ## Deterministic Helper Automation Gate
 
@@ -79,11 +79,11 @@ Run these commands from the target repository when it has this tooling. `init` w
 
 ## Session-By-Session Algorithm
 
-1. Initialize root `retro.json` when write scope is approved; otherwise build the same ledger inline. The ledger must include every reachable current-project session from OpenCode DB sources before synthesis starts.
+1. Initialize or refresh root `retro.json` before synthesis. The ledger must include every reachable current-project session from OpenCode DB sources before any trend/root-cause synthesis starts. If root `retro.json` cannot be written because the user explicitly denied writes or the filesystem blocks it, stop and report `Project Ledger Status: blocked`; do not substitute an inline pseudo-ledger.
 2. Sort sessions chronologically, then split into stable batches when the archive is large.
 3. For large archives with independent batches, consider `orchestrator` read-only fan-out for session observation drafts; the main session owns global synthesis, privacy filtering, root-cause analysis, and output routing.
-4. Analyze each session independently before global synthesis. Do not promote trends until all in-scope sessions are processed or the ledger clearly records unprocessed coverage.
-5. For each session, fill `sessions.<sessionRef>.observations[]` with positive and negative observations:
+4. Analyze each session independently before global synthesis. Do not promote trends until all in-scope sessions are processed or `retro.json` clearly records unprocessed coverage.
+5. For each session, read the full transcript from the source store and fill `sessions.<sessionRef>.audit` plus `sessions.<sessionRef>.observations[]`. Do not set `coverage.status` to `complete` until the validator-required audit fields are filled.
 
 - Session id/title/date/project when available.
 - User goal and constraints.
@@ -104,7 +104,7 @@ Run these commands from the target repository when it has this tooling. `init` w
 9. Record each root cause under `rootCauses` with `confirmed`, `likely`, or `unknown`. If evidence cannot support a cause, route an investigation/instrumentation plan instead of a guessed fix.
 10. For each root cause, create a deep plan under `plans` with `kind`, goal, approach, implementation slices, acceptance criteria, validation, and risks. Use `kind: investigation` for unknown root causes, `kind: remediation` for negative-trend fixes, and `kind: preservation` for positive-trend amplification.
 11. Preview proposal writes with `npm run retro:project-ledger -- proposals --input retro.json --root . --dry-run`, then materialize one OpenSpec proposal per completed plan with `npm run retro:project-ledger -- proposals --input retro.json --root .` when OpenSpec exists and write scope is approved. Avoid OpenSpec noise for isolated nits or explicitly non-actionable findings.
-12. Run `npm run retro:project-ledger -- refresh --input retro.json` after marking sessions complete so `analysisProgress.lastAnalyzedSessionRef` and `analysisProgress.nextSessionRef` show where to resume. Run `npm run retro:project-ledger -- validate --input retro.json` after filling sessions and after trend/root-cause synthesis. Run `npm run retro:project-ledger -- validate --input retro.json --root . --require-complete --require-proposals` after proposal generation. Fix broken references before handoff. If root `retro.json` exists, repository pre-push validation should run this complete gate and fail while any session, trend, root cause, plan, or proposal stage is unfinished.
+12. Run `npm run retro:project-ledger -- refresh --input retro.json` after marking sessions complete so `analysisProgress.lastAnalyzedSessionRef` and `analysisProgress.nextSessionRef` show where to resume. Run `npm run retro:project-ledger -- validate --input retro.json` after filling sessions and after trend/root-cause synthesis. Run `npm run retro:project-ledger -- validate --input retro.json --root . --require-complete --require-proposals` after proposal generation. Fix broken references before handoff. If root `retro.json` exists, repository pre-push validation should run this complete gate and fail while any session, audit field, observation, trend, root cause, plan, or proposal stage is unfinished.
 13. Preserve successful recurring practices as well as problems.
 14. Reconcile proposed improvements against current source/tests/config/docs/prompts before recommending implementation-sensitive changes.
 
@@ -113,6 +113,7 @@ Run these commands from the target repository when it has this tooling. `init` w
 `retro.json` should preserve these relationships:
 
 - `sessions`: every in-scope session has coverage and positive/negative observations.
+- `sessions.<sessionRef>.audit`: every completed session records user goal, constraints, assistant actions, tool failures, validation or skipped reason, edit evidence, user corrections, outcome, lesson, symptom/root-cause notes, confidence, and learning routes.
 - `analysisProgress`: deterministic chronological session order, last analyzed session, next session, completed count, and remaining count for resumable retros.
 - `observations`: each observation has polarity, evidence refs, impact, confidence, and reviewer-learning flags when applicable.
 - `trends`: repeated observations are grouped into candidate, popular, severe-singleton, or rejected trends.
@@ -120,7 +121,14 @@ Run these commands from the target repository when it has this tooling. `init` w
 - `plans`: every root cause has a deep plan or investigation plan with explicit `kind`.
 - `openspecProposals`: every completed plan has a generated or existing OpenSpec proposal reference.
 
-Broken links, popular trends below the repeatability threshold, unknown root causes with guessed fix plans, and proposal references without files should block final handoff until corrected or explicitly scoped as partial.
+Broken links, missing completed-session audit fields, popular trends below the repeatability threshold, unknown root causes with guessed fix plans, and proposal references without files should block final handoff until corrected or explicitly scoped as partial.
+
+## Anti-False-Completion Gate
+
+- A source inventory, mechanical signal rollup, selected-session sample, or inline table is not a project retro.
+- Do not return `Findings`, `Recurring Patterns`, `Root-Cause Analysis`, `Improvement Backlog`, or `ready-to-land` language for a full retro until root `retro.json` exists and records coverage for every reachable current-project session.
+- If only partial work is possible, title the result `Partial Inventory` or `Partial Session Sample`, include `Project Ledger Status: blocked/partial`, and make the first continuation item the exact `retro.json` creation or resume command.
+- Do not mark a session complete from metadata, summary, keyword search, or a final answer alone. Completion requires full transcript review and populated `sessions.<sessionRef>.audit` plus observations.
 
 ## Agent And Reviewer Learning Loop
 
@@ -160,7 +168,7 @@ Treat reviewer agents, worker agents, and user corrections as first-class retro 
 Return:
 
 - `Scope And Coverage`: sources checked, sessions/logs/reflections counted, date range, included/excluded areas.
-- `Coverage Ledger`: concise redacted inline table by default, or `retro.json` path when the user approved writing the generated ledger.
+- `Coverage Ledger`: root `retro.json` path for full retros; concise inline table only for explicitly partial/read-only inventory.
 - `Project Ledger Status`: whether sessions, observations, trends, root causes, plans, and OpenSpec proposals are complete, partial, blocked, or not created.
 - `Coverage Limits`: missing/inaccessible/truncated sources and confidence impact.
 - `Session Rollup`: concise batch/global summary.

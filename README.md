@@ -242,7 +242,7 @@ npm run retro:analyze -- --format markdown
 
 The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, deterministic tool-error categories, open TODO counts, edit/validation/git-review readiness proxies, event types, and session summary counters. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets.
 
-For current-project retros that need durable mining state, initialize a generated working ledger:
+For current-project retros, initialize a generated working ledger before synthesis:
 
 ```sh
 npm run retro:project-ledger -- init --project-root <project-path>
@@ -250,7 +250,7 @@ npm run retro:project-ledger -- init --project-root <project-path>
 
 Run from the target repository when this tooling is available there. `init` writes `<project-path>/retro.json` by default. If running from this kit repository for another target, pass `--project-root <target-project>`, `--root <target-project>`, and write `--out <target-project>/retro.json` unless an approved temp path is being used.
 
-Root `retro.json` is a temporary, machine-checkable ledger for the chain `sessions -> observations -> trends -> root causes -> plans -> OpenSpec proposals`. The helper reads OpenCode SQLite stores in read-only mode, filters sessions to the project root, emits redacted session skeletons, and keeps raw ids, titles, prompts, project paths, and transcript text out by default. `analysisProgress` records the chronological session order, last analyzed session, and next session so future runs can resume instead of restarting. Negative observations must name `mainAgentLearning` and/or `reviewerLearning`; reviewer findings require `mainAgentLearning` so main-agent behavior improves instead of repeating reviewer cycles. Plans use explicit `kind` values: `investigation`, `remediation`, or `preservation`. Fill observations/trends/root causes/plans with human judgment, then refresh progress, validate links, and preview proposal writes:
+Root `retro.json` is a temporary, machine-checkable ledger for the chain `sessions -> per-session audit -> observations -> trends -> root causes -> plans -> OpenSpec proposals`. The helper reads OpenCode SQLite stores in read-only mode, filters sessions to the project root, emits redacted session skeletons, and keeps raw ids, titles, prompts, project paths, and transcript text out by default. `analysisProgress` records the chronological session order, last analyzed session, and next session so future runs can resume instead of restarting. Full retros must keep this root ledger; inline summaries are only partial inventory. A completed session must fill `sessions.<sessionRef>.audit` with user goal, constraints, assistant actions, tool failures, validation or skipped reason, edit evidence, user corrections, outcome, lessons, symptom/root-cause notes, confidence, and learning routes before `coverage.status` is set to `complete`. Negative observations must name `mainAgentLearning` and/or `reviewerLearning`; reviewer findings require `mainAgentLearning` so main-agent behavior improves instead of repeating reviewer cycles. Plans use explicit `kind` values: `investigation`, `remediation`, or `preservation`. Fill audit fields/observations/trends/root causes/plans with human judgment, then refresh progress, validate links, and preview proposal writes:
 
 ```sh
 npm run retro:project-ledger -- refresh --input retro.json
@@ -265,7 +265,7 @@ npm run retro:project-ledger -- proposals --input retro.json --root <project-pat
 npm run retro:project-ledger -- validate --input retro.json --root <project-path> --require-complete --require-proposals
 ```
 
-When root `retro.json` exists, `npm run prepush:validate` runs the complete ledger gate before push. Push fails if any session is not complete, observations are not converted to trends, promoted trends lack root-cause analysis, root causes lack detailed plans, or plans lack generated OpenSpec proposals.
+When root `retro.json` exists, `npm run prepush:validate` runs the complete ledger gate before push. Push fails if any session is not complete, any completed session lacks required audit fields, observations are not converted to trends, promoted trends lack root-cause analysis, root causes lack detailed plans, or plans lack generated OpenSpec proposals.
 
 Use `--db`, `--data-dir`, and `--only-explicit` for controlled stores. Use `--show-paths` only when home-redacted paths are acceptable. Existing init output files are refused unless `--overwrite` is passed.
 

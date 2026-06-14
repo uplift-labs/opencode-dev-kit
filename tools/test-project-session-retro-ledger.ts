@@ -39,6 +39,12 @@ function assertIncludes(text: string, expected: string, message: string): void {
   assert(text.includes(expected), `${message}\nExpected: ${expected}\nActual:\n${text}`);
 }
 
+function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {
+  const actualJson = JSON.stringify(actual, null, 2);
+  const expectedJson = JSON.stringify(expected, null, 2);
+  assert(actualJson === expectedJson, `${message}\nExpected:\n${expectedJson}\nActual:\n${actualJson}`);
+}
+
 function invokeCli(args: string[], cwd: string): { exitCode: number; output: string; stderr: string; stdout: string } {
   const result = spawnSync("node", [cliPath, ...args], { cwd, encoding: "utf8", shell: false });
   if (result.error) {
@@ -83,6 +89,44 @@ function createOpenCodeDbFixture(dbPath: string, projectRoot: string, otherRoot:
   }
 }
 
+function emptyAudit(): ProjectSessionRetroLedger["sessions"][string]["audit"] {
+  return {
+    assistantActions: [],
+    candidateLessons: [],
+    constraints: [],
+    edits: { evidenceRefs: [], happened: null },
+    evidenceConfidence: null,
+    likelyRootCause: null,
+    mainAgentLearning: [],
+    outcome: null,
+    reviewerLearning: [],
+    symptom: null,
+    toolFailures: [],
+    userCorrections: [],
+    userGoal: null,
+    validation: { performed: [], skippedReason: null },
+  };
+}
+
+function completeAudit(goal: string): ProjectSessionRetroLedger["sessions"][string]["audit"] {
+  return {
+    assistantActions: ["Reviewed the full session transcript and recorded outcome evidence."],
+    candidateLessons: ["Preserve the session-specific evidence chain before global synthesis."],
+    constraints: ["Use redacted evidence refs."],
+    edits: { evidenceRefs: [], happened: false },
+    evidenceConfidence: "high",
+    likelyRootCause: "Reviewer contracts lacked explicit user-correction feedback loops.",
+    mainAgentLearning: ["Mine user corrections before final reviewer handoff."],
+    outcome: "success",
+    reviewerLearning: ["Treat repeated user corrections as reviewer-learning evidence."],
+    symptom: "User corrections reached the final handoff repeatedly.",
+    toolFailures: [],
+    userCorrections: ["User correction evidence was present in the transcript."],
+    userGoal: goal,
+    validation: { performed: ["Full transcript reviewed for this fixture session."], skippedReason: null },
+  };
+}
+
 function baseAnalyzedLedger(): ProjectSessionRetroLedger {
   return {
     schemaVersion: 1,
@@ -122,6 +166,7 @@ function baseAnalyzedLedger(): ProjectSessionRetroLedger {
           mechanicalSignals: [],
           toolNames: [],
         },
+        audit: completeAudit("Analyze first fixture session and extract reviewer-learning evidence."),
         coverage: { status: "complete", limits: [] },
         observations: [
           {
@@ -158,6 +203,7 @@ function baseAnalyzedLedger(): ProjectSessionRetroLedger {
           mechanicalSignals: [],
           toolNames: [],
         },
+        audit: completeAudit("Analyze second fixture session and extract repeated reviewer-learning evidence."),
         coverage: { status: "complete", limits: [] },
         observations: [
           {
@@ -238,6 +284,9 @@ const tests: TestCase[] = [
       assert(ledger.scope.sessionCount === 2, `Expected two current-project sessions, got ${ledger.scope.sessionCount}.`);
       assert(Object.keys(ledger.sessions).length === 2, `Expected two session cards, got ${JSON.stringify(ledger.sessions, null, 2)}.`);
       assert(Object.values(ledger.sessions).every((session) => session.coverage.status === "partial"), "Init skeleton should mark per-session human analysis as partial.");
+      for (const session of Object.values(ledger.sessions)) {
+        assertDeepEqual(session.audit, emptyAudit(), "Init skeleton should include exact empty per-session audit scaffold.");
+      }
       assert(Object.values(ledger.sessions).some((session) => session.metadata.mechanicalSignals.includes("has_validation_proxy")), "Init should preserve redacted validation proxy signal.");
       assert(Object.values(ledger.sessions).some((session) => session.metadata.mechanicalSignals.includes("has_open_todo")), "Init should preserve redacted open TODO signal.");
       const serialized = JSON.stringify(ledger);
@@ -339,6 +388,36 @@ const tests: TestCase[] = [
       noObservation.sessions.session_a.observations = [];
       const noObservationResult = validateProjectSessionRetroLedger(noObservation, { requireComplete: true, root: process.cwd() });
       assert(noObservationResult.errors.some((error) => error.includes("complete but has no observations")), `Expected complete session without observations error, got ${JSON.stringify(noObservationResult.errors)}.`);
+
+      const missingAudit = refreshAnalysisProgress(baseAnalyzedLedger());
+      missingAudit.sessions.session_a.audit = emptyAudit();
+      const missingAuditResult = validateProjectSessionRetroLedger(missingAudit, { root: process.cwd() });
+      for (const expected of ["audit.userGoal", "audit.assistantActions", "audit.candidateLessons", "audit.validation", "audit.edits.happened", "audit.outcome", "audit.evidenceConfidence"]) {
+        assert(missingAuditResult.errors.some((error) => error.includes(expected)), `Expected complete session audit ${expected} error, got ${JSON.stringify(missingAuditResult.errors)}.`);
+      }
+
+      const editWithoutEvidence = refreshAnalysisProgress(baseAnalyzedLedger());
+      editWithoutEvidence.sessions.session_a.audit.edits = { happened: true, evidenceRefs: [] };
+      const editWithoutEvidenceResult = validateProjectSessionRetroLedger(editWithoutEvidence, { root: process.cwd() });
+      assert(editWithoutEvidenceResult.errors.some((error) => error.includes("audit.edits.evidenceRefs")), `Expected edit evidence refs error, got ${JSON.stringify(editWithoutEvidenceResult.errors)}.`);
+
+      const skippedValidation = refreshAnalysisProgress(baseAnalyzedLedger());
+      skippedValidation.sessions.session_a.audit.validation = { performed: [], skippedReason: "Reviewer-only session had no executable validation." };
+      const skippedValidationResult = validateProjectSessionRetroLedger(skippedValidation, { root: process.cwd() });
+      assert(skippedValidationResult.valid, `Explicit skipped validation reason should satisfy complete audit, got ${JSON.stringify(skippedValidationResult.errors)}.`);
+
+      const missingAuditObject = refreshAnalysisProgress(baseAnalyzedLedger());
+      missingAuditObject.sessions.session_a.audit = null as never;
+      const missingAuditObjectResult = validateProjectSessionRetroLedger(missingAuditObject, { root: process.cwd() });
+      assert(missingAuditObjectResult.errors.some((error) => error.includes("audit must be an object")), `Expected missing audit object error, got ${JSON.stringify(missingAuditObjectResult.errors)}.`);
+
+      const inconsistentSignals = refreshAnalysisProgress(baseAnalyzedLedger());
+      inconsistentSignals.sessions.session_a.metadata.mechanicalSignals = ["has_edit_tool", "has_tool_error"];
+      inconsistentSignals.sessions.session_a.audit.edits = { happened: false, evidenceRefs: [] };
+      inconsistentSignals.sessions.session_a.audit.toolFailures = [];
+      const inconsistentSignalsResult = validateProjectSessionRetroLedger(inconsistentSignals, { root: process.cwd() });
+      assert(inconsistentSignalsResult.errors.some((error) => error.includes("metadata has_edit_tool")), `Expected edit signal reconciliation error, got ${JSON.stringify(inconsistentSignalsResult.errors)}.`);
+      assert(inconsistentSignalsResult.errors.some((error) => error.includes("metadata has_tool_error")), `Expected tool error reconciliation error, got ${JSON.stringify(inconsistentSignalsResult.errors)}.`);
 
       const noRootCause = refreshAnalysisProgress(baseAnalyzedLedger());
       noRootCause.trends["trend-001"].rootCauseIds = [];
@@ -645,7 +724,16 @@ const tests: TestCase[] = [
       const passParsed = JSON.parse(passed.stdout) as { valid?: unknown };
       assert(passParsed.valid === true, `CLI final gate should report valid true, got ${passed.stdout}`);
 
-      const partial = refreshAnalysisProgress(generated.ledger);
+      const missingAudit = generated.ledger;
+      missingAudit.sessions.session_a.audit = emptyAudit();
+      fs.writeFileSync(ledgerPath, `${JSON.stringify(refreshAnalysisProgress(missingAudit), null, 2)}\n`, "utf8");
+      const missingAuditFailure = invokeCli(["validate", "--input", ledgerPath, "--root", repo, "--require-complete", "--require-proposals", "--format", "json"], repo);
+      assert(missingAuditFailure.exitCode !== 0, "CLI final gate should fail when generated proposals exist but completed session audit is incomplete.");
+      const missingAuditFailureParsed = JSON.parse(missingAuditFailure.stdout) as { errors?: string[] };
+      assert(missingAuditFailureParsed.errors?.some((error) => error.includes("audit.userGoal")), `Expected CLI final gate audit error, got ${missingAuditFailure.stdout}`);
+
+      const regenerated = createProjectSessionRetroProposals(repo, baseAnalyzedLedger());
+      const partial = refreshAnalysisProgress(regenerated.ledger);
       partial.sessions.session_b.coverage.status = "partial";
       fs.writeFileSync(ledgerPath, `${JSON.stringify(refreshAnalysisProgress(partial), null, 2)}\n`, "utf8");
       const completeFailure = invokeCli(["validate", "--input", ledgerPath, "--root", repo, "--require-complete", "--require-proposals", "--format", "json"], repo);

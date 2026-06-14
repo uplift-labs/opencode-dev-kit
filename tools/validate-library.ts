@@ -1026,6 +1026,18 @@ function validateMarkdownFile(root: string, file: string, forbiddenAnchors: stri
       addError(`Session retro artifact with a session ledger must require redaction and user-approved generated ledger writes: ${file}`);
     }
   }
+  if (relative === ".opencode/skills/project-sessions-retro/SKILL.md") {
+    for (const required of [
+      "root `retro.json`",
+      "Do not return `Findings`",
+      "Partial Inventory",
+      "coverage.status` to `complete`",
+      "full transcript",
+      "--require-complete --require-proposals",
+    ]) {
+      requireTextContains(text, required, "project-sessions-retro anti-false-completion contract", file);
+    }
+  }
 }
 
 function main(): void {

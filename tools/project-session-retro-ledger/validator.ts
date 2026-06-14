@@ -84,9 +84,11 @@ function validateSessionObservations(sessions: Record<string, unknown>, errors: 
     if (!isPlainRecord(coverage) || !hasOnlyKnownValues(coverage.status, ["complete", "partial", "blocked"])) {
       errors.push(`sessions.${sessionRef}.coverage.status must be complete, partial, or blocked.`);
     }
+    const coverageStatus = isPlainRecord(coverage) && hasOnlyKnownValues(coverage.status, ["complete", "partial", "blocked"]) ? coverage.status : null;
     if (isPlainRecord(coverage)) {
       validateStringArray(coverage.limits, `sessions.${sessionRef}.coverage.limits`, errors);
     }
+    validateSessionAudit(sessionRef, sessionValue.audit, sessionValue.metadata, coverageStatus, errors);
     if (!Array.isArray(sessionValue.observations)) {
       errors.push(`sessions.${sessionRef}.observations must be an array.`);
       continue;
@@ -133,6 +135,76 @@ function validateSessionObservations(sessions: Record<string, unknown>, errors: 
     });
   }
   return observationRefs;
+}
+
+function validateSessionAudit(sessionRef: string, value: unknown, metadata: unknown, coverageStatus: string | null, errors: string[]): void {
+  if (!isPlainRecord(value)) {
+    errors.push(`sessions.${sessionRef}.audit must be an object.`);
+    return;
+  }
+  nullableString(value.userGoal, `sessions.${sessionRef}.audit.userGoal`, errors);
+  for (const field of ["constraints", "assistantActions", "toolFailures", "userCorrections", "candidateLessons", "mainAgentLearning", "reviewerLearning"]) {
+    validateStringArray(value[field], `sessions.${sessionRef}.audit.${field}`, errors);
+  }
+  if (!isPlainRecord(value.validation)) {
+    errors.push(`sessions.${sessionRef}.audit.validation must be an object.`);
+  } else {
+    validateStringArray(value.validation.performed, `sessions.${sessionRef}.audit.validation.performed`, errors);
+    nullableString(value.validation.skippedReason, `sessions.${sessionRef}.audit.validation.skippedReason`, errors);
+  }
+  if (!isPlainRecord(value.edits)) {
+    errors.push(`sessions.${sessionRef}.audit.edits must be an object.`);
+  } else {
+    if (value.edits.happened !== null && typeof value.edits.happened !== "boolean") {
+      errors.push(`sessions.${sessionRef}.audit.edits.happened must be boolean or null.`);
+    }
+    validateStringArray(value.edits.evidenceRefs, `sessions.${sessionRef}.audit.edits.evidenceRefs`, errors);
+  }
+  if (value.outcome !== null && !hasOnlyKnownValues(value.outcome, ["success", "partial", "failed", "blocked", "unclear"])) {
+    errors.push(`sessions.${sessionRef}.audit.outcome must be success, partial, failed, blocked, unclear, or null.`);
+  }
+  nullableString(value.symptom, `sessions.${sessionRef}.audit.symptom`, errors);
+  nullableString(value.likelyRootCause, `sessions.${sessionRef}.audit.likelyRootCause`, errors);
+  if (value.evidenceConfidence !== null && !hasOnlyKnownValues(value.evidenceConfidence, ["low", "medium", "high"])) {
+    errors.push(`sessions.${sessionRef}.audit.evidenceConfidence must be low, medium, high, or null.`);
+  }
+  if (coverageStatus === "complete") {
+    const mechanicalSignals = isPlainRecord(metadata) && Array.isArray(metadata.mechanicalSignals)
+      ? metadata.mechanicalSignals.filter((signal): signal is string => typeof signal === "string")
+      : [];
+    validateCompleteSessionAudit(sessionRef, value, mechanicalSignals, errors);
+  }
+}
+
+function validateCompleteSessionAudit(sessionRef: string, audit: Record<string, unknown>, mechanicalSignals: string[], errors: string[]): void {
+  if (!isNonEmptyString(audit.userGoal)) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.userGoal must be filled before coverage.status complete.`);
+  }
+  if (!Array.isArray(audit.assistantActions) || audit.assistantActions.length === 0) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.assistantActions must be filled before coverage.status complete.`);
+  }
+  if (!Array.isArray(audit.candidateLessons) || audit.candidateLessons.length === 0) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.candidateLessons must be filled before coverage.status complete.`);
+  }
+  if (!isPlainRecord(audit.validation) || (!Array.isArray(audit.validation.performed)) || (audit.validation.performed.length === 0 && !isNonEmptyString(audit.validation.skippedReason))) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.validation must record performed checks or an explicit skipped reason.`);
+  }
+  if (!isPlainRecord(audit.edits) || typeof audit.edits.happened !== "boolean") {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.edits.happened must be true or false before coverage.status complete.`);
+  } else if (audit.edits.happened === true && (!Array.isArray(audit.edits.evidenceRefs) || audit.edits.evidenceRefs.length === 0)) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.edits.evidenceRefs must explain edit evidence when edits happened.`);
+  } else if (mechanicalSignals.includes("has_edit_tool") && audit.edits.happened !== true) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.edits.happened must be true when metadata has_edit_tool is present.`);
+  }
+  if (mechanicalSignals.includes("has_tool_error") && (!Array.isArray(audit.toolFailures) || audit.toolFailures.length === 0)) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.toolFailures must explain metadata has_tool_error before coverage.status complete.`);
+  }
+  if (!hasOnlyKnownValues(audit.outcome, ["success", "partial", "failed", "blocked", "unclear"])) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.outcome must be filled before coverage.status complete.`);
+  }
+  if (!hasOnlyKnownValues(audit.evidenceConfidence, ["low", "medium", "high"])) {
+    errors.push(`retro is incomplete: sessions.${sessionRef}.audit.evidenceConfidence must be filled before coverage.status complete.`);
+  }
 }
 
 function validateMainAgentLearning(sessionRef: string, observationId: string, value: Record<string, unknown>, errors: string[]): void {

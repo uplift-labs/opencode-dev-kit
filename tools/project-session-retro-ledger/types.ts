@@ -4,6 +4,7 @@ export type PlanKind = "investigation" | "remediation" | "preservation";
 export type Polarity = "positive" | "negative";
 export type ProposalStatus = "created" | "existing" | "blocked" | "draft";
 export type RootCauseStatus = "confirmed" | "likely" | "unknown";
+export type SessionOutcome = "success" | "partial" | "failed" | "blocked" | "unclear";
 export type TrendClassification = "candidate" | "popular" | "severe-singleton" | "rejected";
 
 export type DateRange = {
@@ -54,6 +55,28 @@ export type ProjectSessionRetroSession = {
     };
     mechanicalSignals: string[];
     toolNames: string[];
+  };
+  audit: {
+    userGoal: string | null;
+    constraints: string[];
+    assistantActions: string[];
+    toolFailures: string[];
+    validation: {
+      performed: string[];
+      skippedReason: string | null;
+    };
+    edits: {
+      happened: boolean | null;
+      evidenceRefs: string[];
+    };
+    userCorrections: string[];
+    outcome: SessionOutcome | null;
+    candidateLessons: string[];
+    symptom: string | null;
+    likelyRootCause: string | null;
+    evidenceConfidence: Confidence | null;
+    mainAgentLearning: string[];
+    reviewerLearning: string[];
   };
   coverage: {
     status: CoverageStatus;

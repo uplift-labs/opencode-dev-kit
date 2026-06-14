@@ -1201,7 +1201,7 @@ const tests: TestCase[] = [
       const result = invokeValidator(fixture);
       assertFailure(result, "Project session retro must not weaken ledger-first completion contract.");
       assertOutputContains(result, "anti-false-completion", "Project retro contract failure should name anti-false-completion guard.");
-      assertOutputContains(result, "root `retro.json`", "Project retro contract failure should require root retro.json.");
+      assertOutputContains(result, "root `retro/`", "Project retro contract failure should require root retro/.");
     },
   },
   {

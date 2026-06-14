@@ -528,7 +528,7 @@ function validateAnalysisProgress(ledger: Record<string, unknown>, sessions: Rec
     && progress.lastAnalyzedSessionRef === computed.lastAnalyzedSessionRef
     && progress.nextSessionRef === computed.nextSessionRef;
   if (!matches) {
-    errors.push("analysisProgress must match sessions coverage; run `npm run retro:project-ledger -- refresh --input retro.json` after updating session coverage.");
+    errors.push("analysisProgress must match sessions coverage; run `npm run retro:project-ledger -- refresh --input retro` after updating session coverage.");
   }
   return computed;
 }

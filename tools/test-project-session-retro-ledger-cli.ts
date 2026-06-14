@@ -247,9 +247,37 @@ const tests: TestCase[] = [
     }),
   },
   {
+    name: "patch-sessions and status accept sharded ledger directory",
+    run: () => withTempRepo("patch-sessions-sharded", (repo) => {
+      const { firstRef, ledgerPath, refs } = prepareLedger(repo);
+      const retroDir = path.join(repo, "retro");
+      const split = invokeCli(["split", "--input", ledgerPath, "--out", retroDir], repo);
+      assert(split.exitCode === 0, `Split should pass before sharded patching, got ${split.output}`);
+
+      const validPatch = writePatch(repo, { sessions: { [firstRef]: { audit: completeAudit("Complete first sharded fixture session."), coverage: { limits: [], status: "complete" }, observations: [observation(firstRef)] } } });
+      const patched = invokeCli(["patch-sessions", "--input", retroDir, "--patch", validPatch, "--format", "json"], repo);
+      assert(patched.exitCode === 0, `Sharded patch should pass, got ${patched.output}`);
+      const sessionShard = JSON.parse(fs.readFileSync(path.join(retroDir, "sessions", `${firstRef}.json`), "utf8")) as ProjectSessionRetroLedger["sessions"][string];
+      assert(sessionShard.coverage.status === "complete", "Sharded patch should write the updated session shard.");
+
+      const status = invokeCli(["status", "--input", retroDir, "--limit", "1", "--format", "json"], repo);
+      assert(status.exitCode === 0, `Sharded status should pass, got ${status.output}`);
+      const parsed = JSON.parse(status.stdout) as { nextSessionRefs?: string[]; progress?: { completedSessionCount?: number } };
+      assert(parsed.progress?.completedSessionCount === 1, `Sharded status should reflect patched progress, got ${status.stdout}`);
+      assertDeepEqual(parsed.nextSessionRefs, [refs[1]], "Sharded status should return the next incomplete session.");
+    }),
+  },
+  {
     name: "status CLI stays compact and honors limits",
     run: () => withTempRepo("status", (repo) => {
       const { ledgerPath, refs } = prepareLedger(repo);
+      const initialJson = invokeCli(["status", "--input", ledgerPath, "--limit", "1", "--format", "json"], repo);
+      assert(initialJson.exitCode === 0, `Initial status JSON should pass, got ${initialJson.output}`);
+      const initialParsed = JSON.parse(initialJson.stdout) as { nextSessions?: Array<{ eventRows?: number; messageRows?: number; partRows?: number; sessionRef?: string; todoRows?: number }> };
+      assertDeepEqual(initialParsed.nextSessions?.map((session) => session.sessionRef), [refs[0]], "Status JSON should include bounded next-session batch metadata.");
+      assert(initialParsed.nextSessions?.[0]?.messageRows === 1 && initialParsed.nextSessions?.[0]?.partRows === 2 && initialParsed.nextSessions?.[0]?.todoRows === 1 && initialParsed.nextSessions?.[0]?.eventRows === 4, `Status JSON should include redacted row counts for batching, got ${initialJson.stdout}`);
+      assert(!initialJson.stdout.includes(rawSessionOne), "Status JSON next-session metadata must not expose raw session ids.");
+
       const ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf8")) as ProjectSessionRetroLedger;
       ledger.sessions[refs[0]].coverage = { limits: [], status: "complete" };
       ledger.sessions[refs[0]].audit = completeAudit("Complete first fixture session for status coverage.");
@@ -258,9 +286,10 @@ const tests: TestCase[] = [
 
       const json = invokeCli(["status", "--input", ledgerPath, "--limit", "1", "--format", "json"], repo);
       assert(json.exitCode === 0, `Status JSON should pass, got ${json.output}`);
-      const parsed = JSON.parse(json.stdout) as { coverage?: Record<string, number>; nextSessionRefs?: string[] };
+      const parsed = JSON.parse(json.stdout) as { coverage?: Record<string, number>; nextSessionRefs?: string[]; nextSessions?: Array<{ sessionRef?: string }> };
       assert(parsed.coverage?.complete === 1 && parsed.coverage?.partial === 4, `Status should count coverage states, got ${json.stdout}`);
       assertDeepEqual(parsed.nextSessionRefs, [refs[1]], "Status JSON should honor next-ref limit.");
+      assertDeepEqual(parsed.nextSessions?.map((session) => session.sessionRef), [refs[1]], "Status JSON should honor next-session metadata limit.");
       assert(!json.stdout.includes("sessionOrder"), "Status JSON must omit full sessionOrder everywhere.");
 
       const text = invokeCli(["status", "--input", ledgerPath, "--limit", "1"], repo);

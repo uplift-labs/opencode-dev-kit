@@ -8,8 +8,10 @@ import { DatabaseSync } from "node:sqlite";
 import {
   createProjectSessionRetroProposals,
   initProjectSessionRetroLedger,
+  readProjectSessionRetroLedgerStorage,
   refreshAnalysisProgress,
   validateProjectSessionRetroLedger,
+  writeProjectSessionRetroLedgerStorage,
 } from "./opencode-project-session-retro-ledger.ts";
 import type { ProjectSessionRetroLedger } from "./opencode-project-session-retro-ledger.ts";
 
@@ -450,6 +452,68 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "sharded storage round-trips ledger without changing object schema",
+    run: () => withTempRepo("sharded-storage", (repo) => {
+      const ledger = baseAnalyzedLedger();
+      const retroDir = path.join(repo, "retro");
+      writeProjectSessionRetroLedgerStorage(retroDir, ledger);
+
+      assert(fs.existsSync(path.join(retroDir, "index.json")), "Sharded storage should write index.json.");
+      assert(fs.existsSync(path.join(retroDir, "sessions", "session_a.json")), "Sharded storage should write one file per session.");
+      assert(fs.existsSync(path.join(retroDir, "trends", "trend-001.json")), "Sharded storage should write one file per trend.");
+      assert(fs.existsSync(path.join(retroDir, "rootCauses", "cause-001.json")), "Sharded storage should write one file per root cause.");
+      assert(fs.existsSync(path.join(retroDir, "plans", "plan-001.json")), "Sharded storage should write one file per plan.");
+
+      const index = JSON.parse(fs.readFileSync(path.join(retroDir, "index.json"), "utf8")) as Record<string, unknown>;
+      assert(!("sessions" in index) && !("trends" in index) && !("rootCauses" in index) && !("plans" in index) && !("openspecProposals" in index), "index.json should keep only small top-level fields.");
+      assertDeepEqual(JSON.parse(fs.readFileSync(path.join(retroDir, "sessions", "session_a.json"), "utf8")), ledger.sessions.session_a, "Session shard should contain exactly the old sessions.<id> value.");
+      assertDeepEqual(readProjectSessionRetroLedgerStorage(retroDir), ledger, "Reading a sharded ledger should assemble the original ledger object.");
+
+      const legacyPath = path.join(repo, "retro.json");
+      writeProjectSessionRetroLedgerStorage(legacyPath, ledger);
+      assertDeepEqual(readProjectSessionRetroLedgerStorage(legacyPath), ledger, "Legacy single-file storage should remain readable.");
+
+      const weirdLedger = baseAnalyzedLedger();
+      weirdLedger.trends["trend/unsafe:id"] = { ...weirdLedger.trends["trend-001"], rootCauseIds: [] };
+      weirdLedger.trends.trend = { ...weirdLedger.trends["trend-001"], summary: "Lowercase collision fixture", rootCauseIds: [] };
+      weirdLedger.trends.Trend = { ...weirdLedger.trends["trend-001"], summary: "Uppercase collision fixture", rootCauseIds: [] };
+      const weirdRetroDir = path.join(repo, "retro-weird");
+      writeProjectSessionRetroLedgerStorage(weirdRetroDir, weirdLedger);
+      assert(fs.readdirSync(path.join(weirdRetroDir, "trends")).some((fileName) => fileName.startsWith("~") && fileName.endsWith(".json")), "Unsafe shard ids should be encoded as reversible filenames.");
+      const assembledWeird = readProjectSessionRetroLedgerStorage(weirdRetroDir);
+      assertDeepEqual(assembledWeird.trends["trend/unsafe:id"], weirdLedger.trends["trend/unsafe:id"], "Encoded shard ids should round-trip without changing the map key schema.");
+      assertDeepEqual(assembledWeird.trends.trend, weirdLedger.trends.trend, "Lowercase shard id should round-trip.");
+      assertDeepEqual(assembledWeird.trends.Trend, weirdLedger.trends.Trend, "Case-different shard id should not collide on case-insensitive filesystems.");
+    }),
+  },
+  {
+    name: "CLI split assemble validate and refresh support sharded ledger directory",
+    run: () => withTempRepo("cli-sharded", (repo) => {
+      const ledger = baseAnalyzedLedger();
+      ledger.sessions.session_b.coverage.status = "partial";
+      const legacyPath = path.join(repo, "retro.json");
+      const retroDir = path.join(repo, "retro");
+      const assembledPath = path.join(repo, "assembled.json");
+      fs.writeFileSync(legacyPath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+
+      const split = invokeCli(["split", "--input", legacyPath, "--out", retroDir], repo);
+      assert(split.exitCode === 0, `CLI split should pass, got ${split.exitCode}: ${split.output}`);
+      assert(fs.existsSync(path.join(retroDir, "sessions", "session_b.json")), "CLI split should write session shards.");
+
+      const stale = invokeCli(["validate", "--input", retroDir, "--format", "json"], repo);
+      assert(stale.exitCode !== 0 && JSON.parse(stale.stdout).errors.some((error: string) => error.includes("analysisProgress must match")), `Expected stale sharded progress validation failure, got ${stale.output}`);
+
+      const refreshed = invokeCli(["refresh", "--input", retroDir, "--format", "json"], repo);
+      assert(refreshed.exitCode === 0, `CLI refresh should pass for sharded input, got ${refreshed.exitCode}: ${refreshed.output}`);
+      const valid = invokeCli(["validate", "--input", retroDir, "--format", "json"], repo);
+      assert(valid.exitCode === 0, `Refreshed sharded ledger should validate, got ${valid.output}`);
+
+      const assemble = invokeCli(["assemble", "--input", retroDir, "--out", assembledPath], repo);
+      assert(assemble.exitCode === 0, `CLI assemble should pass, got ${assemble.exitCode}: ${assemble.output}`);
+      assertDeepEqual(JSON.parse(fs.readFileSync(assembledPath, "utf8")), readProjectSessionRetroLedgerStorage(retroDir), "CLI assemble should emit the assembled ledger object.");
+    }),
+  },
+  {
     name: "CLI refresh updates stale analysis progress",
     run: () => withTempRepo("cli-refresh", (repo) => {
       const ledger = baseAnalyzedLedger();
@@ -768,10 +832,10 @@ const tests: TestCase[] = [
       const parsed = JSON.parse(validate.stdout) as { valid?: unknown };
       assert(parsed.valid === true, `CLI validate JSON should report valid true, got ${validate.output}`);
 
-      const defaultOut = path.join(projectRoot, "retro.json");
+      const defaultOut = path.join(projectRoot, "retro");
       const initDefault = invokeCli(["init", "--project-root", projectRoot, "--db", dbPath, "--only-explicit"], repo);
-      assert(initDefault.exitCode === 0, `CLI init without --out should write project-root retro.json, got ${initDefault.exitCode}: ${initDefault.output}`);
-      assert(fs.existsSync(defaultOut), "CLI init without --out should create retro.json in project root.");
+      assert(initDefault.exitCode === 0, `CLI init without --out should write project-root retro/, got ${initDefault.exitCode}: ${initDefault.output}`);
+      assert(fs.existsSync(path.join(defaultOut, "index.json")), "CLI init without --out should create retro/index.json in project root.");
     }),
   },
 ];

@@ -57,6 +57,18 @@ const legacyToolingReferences = [
   "test-library.ps1",
   "install-opencode-global.js",
 ];
+const projectRetroPhaseRows = [
+  "Scope and source inventory",
+  "Batch decomposition",
+  "Per-session observation",
+  "Trend synthesis",
+  "Root-cause analysis",
+  "Plan design",
+  "OpenSpec follow-up routing",
+  "Instruction artifact changes",
+  "Code/test/tooling changes",
+  "Final delivery control",
+];
 
 function addError(message: string): void {
   errors.push(message);
@@ -275,6 +287,61 @@ function getCatalogEntries(readmeText: string, startHeading: string, endHeading:
   }
 
   return Array.from(match.groups.body.matchAll(/^-\s+`([^`]+)`:/gm), (entry) => entry[1]);
+}
+
+function getFirstColumnRowsAfterMarker(text: string, marker: string): string[] {
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) {
+    return [];
+  }
+  const rows: string[] = [];
+  let inTable = false;
+  for (const line of text.slice(markerIndex + marker.length).split(/\r?\n/)) {
+    if (!inTable) {
+      if (!/^\s*\|/.test(line)) {
+        continue;
+      }
+      inTable = true;
+    } else if (!/^\s*\|/.test(line)) {
+      break;
+    }
+
+    const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+    const first = cells[0];
+    if (!first || first === "Phase" || first === "Retro phase" || /^-+$/.test(first)) {
+      continue;
+    }
+    rows.push(first);
+  }
+  return rows;
+}
+
+function validateProjectRetroPhaseRows(text: string, marker: string, label: string, file: string): void {
+  const rows = getFirstColumnRowsAfterMarker(text, marker);
+  const rowCounts = new Map<string, number>();
+  for (const row of rows) {
+    rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1);
+  }
+  for (const [row, count] of rowCounts) {
+    if (count > 1) {
+      addError(`${label} has duplicate phase row '${row}': ${file}`);
+    }
+  }
+  for (const required of projectRetroPhaseRows) {
+    if (!rows.includes(required)) {
+      addError(`${label} must include phase row '${required}': ${file}`);
+    }
+  }
+  for (const row of rows) {
+    if (!projectRetroPhaseRows.includes(row)) {
+      addError(`${label} has unexpected phase row '${row}': ${file}`);
+    }
+  }
+  for (let index = 0; index < projectRetroPhaseRows.length; index++) {
+    if (rows[index] !== projectRetroPhaseRows[index]) {
+      addError(`${label} phase row order mismatch at position ${index + 1}: expected '${projectRetroPhaseRows[index]}' got '${rows[index] ?? "<missing>"}': ${file}`);
+    }
+  }
 }
 
 function getRequiredHeadingSection(readmeText: string, heading: string, readmePath: string): string {
@@ -499,6 +566,24 @@ function validateReadme(root: string, skillNames: string[], agentNames: string[]
   requireTextContains(routingMap, "instruction-artifact-tuning", "README instruction-artifact route", readmePath);
   requireTextContains(routingMap, "instruction-artifact-audit-runbook.md", "README instruction-artifact route", readmePath);
   requireTextContains(reviewerGateMap, "instruction-artifact-reviewer", "README reviewer gate map", readmePath);
+  if (skillNames.includes("project-sessions-retro")) {
+    requireTextContains(routingMap, "project-sessions-retro", "README project session retro route", readmePath);
+    requireTextContains(routingMap, "all-sessions-retro", "README project session retro route", readmePath);
+    requireTextContains(routingMap, "retro:project-ledger", "README project session retro route", readmePath);
+    requireTextContains(readmeText, "root `retro/`", "README project session retro ledger contract", readmePath);
+    for (const required of [
+      "Full-retro phase routing",
+      "session-observation-worker",
+      "root-cause-analysis",
+      "deep-task-planning",
+      "openspec-propose",
+      "session-delivery-reviewer",
+      "repo-local ignored scratch",
+    ]) {
+      requireTextContains(readmeText, required, "README project session retro phase routing", readmePath);
+    }
+    validateProjectRetroPhaseRows(readmeText, "Full-retro phase routing", "README project session retro phase routing", readmePath);
+  }
   compareCatalog("Skill", skillNames, getCatalogEntries(readmeText, "Skill Catalog", "Agent Catalog", readmePath), readmePath);
   compareCatalog("Agent", agentNames, getCatalogEntries(readmeText, "Agent Catalog", "Instruction Templates", readmePath), readmePath);
   compareCatalog("Instruction template", instructionNames, getCatalogEntries(readmeText, "Instruction Templates", "Porting Notes", readmePath), readmePath);
@@ -1030,19 +1115,31 @@ function validateMarkdownFile(root: string, file: string, forbiddenAnchors: stri
   }
   if (relative === ".opencode/skills/project-sessions-retro/SKILL.md") {
     for (const required of [
-      "root `retro.json`",
+      "root `retro/`",
       "Do not return `Findings`",
       "Partial Inventory",
       "coverage.status` to `complete`",
       "full transcript",
-      "status --input retro.json",
-      "transcript --input retro.json",
-      "patch-sessions --input retro.json",
+      "status --input retro",
+      "transcript --input retro",
+      "patch-sessions --input retro",
       "without asking whether batching is desired",
+      "Do not stop after a successful batch",
+      "parallel worker batches",
+      "A batch size of 1-5 sessions is a debugging fallback",
+      "## Phase Skill Routing",
+      "session-observation-worker",
+      "root-cause-analysis",
+      "deep-task-planning",
+      "openspec-propose",
+      "session-delivery-reviewer",
+      "instruction-artifact-reviewer",
+      "repo-local ignored scratch",
       "--require-complete --require-proposals",
     ]) {
       requireTextContains(text, required, "project-sessions-retro anti-false-completion contract", file);
     }
+    validateProjectRetroPhaseRows(text, "## Phase Skill Routing", "project-sessions-retro phase routing", file);
   }
 }
 

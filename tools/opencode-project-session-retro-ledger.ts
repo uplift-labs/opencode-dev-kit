@@ -8,6 +8,8 @@ export { patchProjectSessionRetroSessions, summarizeProjectSessionRetroLedger } 
 export type { PatchProjectSessionRetroSessionsResult, ProjectSessionRetroStatus } from "./project-session-retro-ledger/ledger-ops.ts";
 export { computeAnalysisProgress, refreshAnalysisProgress } from "./project-session-retro-ledger/progress.ts";
 export { initProjectSessionRetroLedger } from "./project-session-retro-ledger/sqlite-source.ts";
+export { isProjectSessionRetroShardedDirectory, readProjectSessionRetroLedgerStorage, writeProjectSessionRetroLedgerStorage } from "./project-session-retro-ledger/storage.ts";
+export type { ProjectSessionRetroStorageFormat, WriteProjectSessionRetroLedgerStorageOptions } from "./project-session-retro-ledger/storage.ts";
 export { readSessionTranscripts } from "./project-session-retro-ledger/transcript.ts";
 export type { ProjectSessionTranscriptResult, ReadSessionTranscriptsOptions } from "./project-session-retro-ledger/transcript.ts";
 export * from "./project-session-retro-ledger/types.ts";

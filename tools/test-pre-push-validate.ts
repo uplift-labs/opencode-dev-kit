@@ -52,6 +52,12 @@ function writeActiveChange(root: string, changeId: string): void {
   fs.writeFileSync(path.join(changeRoot, "tasks.md"), `# Tasks: ${changeId}\n\n- [ ] Do work.\n`, "utf8");
 }
 
+function writeShardedRetroIndex(root: string): void {
+  const retroRoot = path.join(root, "retro");
+  fs.mkdirSync(retroRoot, { recursive: true });
+  fs.writeFileSync(path.join(retroRoot, "index.json"), "{}\n", "utf8");
+}
+
 function commandKey(command: ValidationCommand): string {
   return `${command.label}:${command.command} ${command.args.join(" ")}`;
 }
@@ -95,6 +101,37 @@ const tests: TestCase[] = [
         "Repository tests",
       ], "Retro ledger gate should run before tests.");
       assertArrayEqual(plan[1].args, ["run", "retro:project-ledger", "--", "validate", "--input", "retro.json", "--root", ".", "--require-complete", "--require-proposals"], "Retro ledger gate should require complete proposal-backed ledger.");
+    }),
+  },
+  {
+    name: "pre-push plan validates sharded root retro directory when present",
+    run: () => withTempDir("with-retro-dir", (root) => {
+      writeShardedRetroIndex(root);
+      const plan = buildPrePushValidationPlan(root);
+      assertEqual(plan.length, 3, "Plan with root retro/ should include repository gates plus retro ledger gate.");
+      assertArrayEqual(plan.map((command) => command.label), [
+        "Repository validation",
+        "Project session retro ledger",
+        "Repository tests",
+      ], "Sharded retro ledger gate should run before tests.");
+      assertArrayEqual(plan[1].args, ["run", "retro:project-ledger", "--", "validate", "--input", "retro", "--root", ".", "--require-complete", "--require-proposals"], "Sharded retro ledger gate should require complete proposal-backed ledger.");
+    }),
+  },
+  {
+    name: "pre-push plan validates corrupt sharded retro directory",
+    run: () => withTempDir("with-corrupt-retro-dir", (root) => {
+      fs.mkdirSync(path.join(root, "retro"), { recursive: true });
+      const plan = buildPrePushValidationPlan(root);
+      assertArrayEqual(plan[1].args, ["run", "retro:project-ledger", "--", "validate", "--input", "retro", "--root", ".", "--require-complete", "--require-proposals"], "Corrupt sharded retro directory should still run the retro ledger gate so validation fails visibly.");
+    }),
+  },
+  {
+    name: "pre-push plan prefers sharded retro directory over legacy file",
+    run: () => withTempDir("with-both-retro-stores", (root) => {
+      writeShardedRetroIndex(root);
+      fs.writeFileSync(path.join(root, "retro.json"), "{}\n", "utf8");
+      const plan = buildPrePushValidationPlan(root);
+      assertArrayEqual(plan[1].args, ["run", "retro:project-ledger", "--", "validate", "--input", "retro", "--root", ".", "--require-complete", "--require-proposals"], "Sharded retro directory should be the preferred root ledger input.");
     }),
   },
   {

@@ -5,6 +5,19 @@ import { isPlainRecord } from "./utils.ts";
 export type ProjectSessionRetroStatus = {
   coverage: Record<CoverageStatus, number>;
   nextSessionRefs: string[];
+  nextSessions: Array<{
+    coverageStatus: CoverageStatus;
+    dateRange: ProjectSessionRetroSession["metadata"]["dateRange"];
+    eventRows: number;
+    mechanicalSignals: string[];
+    messageRows: number;
+    observationCount: number;
+    partRows: number;
+    sessionRef: string;
+    todoRows: number;
+    toolNames: string[];
+    tokenRows: ProjectSessionRetroSession["metadata"]["tokens"];
+  }>;
   progress: Omit<ProjectSessionRetroLedger["analysisProgress"], "sessionOrder">;
   scope: ProjectSessionRetroLedger["scope"];
   sources: Array<Pick<ProjectSessionRetroLedger["sources"][number], "includedSessions" | "readable" | "sessionsRead" | "sourceRef" | "status" | "type" | "warnings">>;
@@ -46,9 +59,26 @@ export function summarizeProjectSessionRetroLedger(ledger: ProjectSessionRetroLe
   const nextSessionRefs = ledger.analysisProgress.sessionOrder
     .filter((sessionRef) => ledger.sessions[sessionRef]?.coverage.status !== "complete")
     .slice(0, limit);
+  const nextSessions = nextSessionRefs.map((sessionRef) => {
+    const session = ledger.sessions[sessionRef];
+    return {
+      coverageStatus: session.coverage.status,
+      dateRange: session.metadata.dateRange,
+      eventRows: session.metadata.messageRows + session.metadata.partRows + session.metadata.todoRows,
+      mechanicalSignals: [...session.metadata.mechanicalSignals],
+      messageRows: session.metadata.messageRows,
+      observationCount: session.observations.length,
+      partRows: session.metadata.partRows,
+      sessionRef,
+      todoRows: session.metadata.todoRows,
+      tokenRows: { ...session.metadata.tokens },
+      toolNames: [...session.metadata.toolNames],
+    };
+  });
   return {
     coverage,
     nextSessionRefs,
+    nextSessions,
     progress: {
       completedSessionCount: ledger.analysisProgress.completedSessionCount,
       lastAnalyzedSessionRef: ledger.analysisProgress.lastAnalyzedSessionRef,

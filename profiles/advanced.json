@@ -30,6 +30,7 @@
     "operation-scheduler-recovery",
     "orchestrator",
     "production-service-openspec",
+    "root-cause-analysis",
     "rust-workspace-bootstrap",
     "service-architecture-design",
     "project-sessions-retro",
@@ -48,6 +49,7 @@
     "protocol-api-reviewer",
     "qwen-local-worker",
     "rust-concurrency-reviewer",
+    "session-observation-worker",
     "session-delivery-reviewer",
     "test-coverage-reviewer",
     "wire-protocol-reviewer"

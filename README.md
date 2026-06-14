@@ -248,27 +248,60 @@ For current-project retros, initialize a generated working ledger before synthes
 npm run retro:project-ledger -- init --project-root <project-path>
 ```
 
-Run from the target repository when this tooling is available there. `init` writes `<project-path>/retro.json` by default. If running from this kit repository for another target, pass `--project-root <target-project>`, `--root <target-project>`, and write `--out <target-project>/retro.json` unless an approved temp path is being used.
+Run from the target repository when this tooling is available there. `init` writes sharded `<project-path>/retro/` by default. If running from this kit repository for another target, pass `--project-root <target-project>` and write `--out <target-project>/retro` unless an approved temp path is being used. Pass `--root <target-project>` on `proposals` and strict `validate` commands. Legacy single-file ledgers remain supported when `--out` or `--input` points to a path ending in `.json`.
 
-Root `retro.json` is a temporary, machine-checkable ledger for the chain `sessions -> per-session audit -> observations -> trends -> root causes -> plans -> OpenSpec proposals`. The helper reads OpenCode SQLite stores in read-only mode, filters sessions to the project root, emits redacted session skeletons, and keeps raw ids, titles, prompts, project paths, and transcript text out by default. `analysisProgress` records the chronological session order, last analyzed session, and next session so future runs can resume instead of restarting. Full retros must keep this root ledger; inline summaries are only partial inventory. Use `status` to get counts and next refs without opening huge JSON manually, `transcript` to extract ordered full transcript envelopes for redacted session refs or raw ids, and `patch-sessions` to merge small reviewed batch audit JSON back into `retro.json` with progress refresh and validation. `transcript` redacts content by default; `--include-content` is explicit local-analysis mode and should write to a local file rather than user-facing output. A completed session must fill `sessions.<sessionRef>.audit` with user goal, constraints, assistant actions, tool failures, validation or skipped reason, edit evidence, user corrections, outcome, lessons, symptom/root-cause notes, confidence, and learning routes before `coverage.status` is set to `complete`. Negative observations must name `mainAgentLearning` and/or `reviewerLearning`; reviewer findings require `mainAgentLearning` so main-agent behavior improves instead of repeating reviewer cycles. Plans use explicit `kind` values: `investigation`, `remediation`, or `preservation`. Fill audit fields/observations/trends/root causes/plans with human judgment, then refresh progress, validate links, and preview proposal writes:
+Root `retro/` is a temporary, machine-checkable sharded ledger for the chain `sessions -> per-session audit -> observations -> trends -> root causes -> plans -> OpenSpec proposals`. `retro/index.json` holds small top-level metadata; `retro/sessions/<session-ref>.json`, `retro/trends/<trend-id>.json`, `retro/rootCauses/<cause-id>.json`, `retro/plans/<plan-id>.json`, and `retro/openspecProposals/<change-id>.json` hold the same object values that previously lived under those `retro.json` maps.
+
+Key current-project retro rules:
+
+- Full retros must create and keep root `retro/`; inline summaries are only partial inventory.
+- The helper reads OpenCode SQLite stores in read-only mode, filters sessions to the project root, emits redacted session skeletons, and keeps raw ids, titles, prompts, project paths, and transcript text out by default.
+- `analysisProgress` records chronological session order, last analyzed session, and next session so future runs can resume instead of restarting.
+- Use `status --format json` to get counts, next refs, and bounded `nextSessions` batch metadata without opening huge JSON manually.
+- Use `transcript` to extract ordered full transcript envelopes for redacted session refs or raw ids, and `patch-sessions` to merge reviewed batch audit JSON back into `retro/` with progress refresh and validation.
+- For large archives, `project-sessions-retro` uses orchestrator-style parallel worker batches: `session-observation-worker` reviews local transcript JSON and returns sanitized patch drafts, while the main session is the only writer to `retro/`.
+- A successful batch is a checkpoint, not a stopping point; continue status/transcript/patch waves until all sessions are complete or a real blocker appears.
+- `transcript` redacts content by default. `--include-content` is explicit local-analysis mode. For worker batches, write JSON under a repo-local ignored scratch directory that `session-observation-worker` can read without `external_directory` permission; use OS temp only for main-session-only analysis or for a worker surface with explicit external-read permission. Delete raw transcript exports created by the run after their patches are applied, or report retained paths in `Privacy Notes`.
+- A completed session must fill `sessions.<sessionRef>.audit` with user goal, constraints, assistant actions, tool failures, validation or skipped reason, edit evidence, user corrections, outcome, lessons, symptom/root-cause notes, confidence, and learning routes before `coverage.status` is set to `complete`.
+- Negative observations must name `mainAgentLearning` and/or `reviewerLearning`; reviewer findings require `mainAgentLearning` so main-agent behavior improves instead of repeating reviewer cycles.
+- Plans use explicit `kind` values: `investigation`, `remediation`, or `preservation`.
+
+Full-retro phase routing:
+
+| Phase | Skill/agent/helper |
+| --- | --- |
+| Scope and source inventory | `project-sessions-retro`, `retro:project-ledger` |
+| Batch decomposition | `orchestrator` |
+| Per-session observation | `session-observation-worker`, optional `qwen-local-worker` first pass |
+| Trend synthesis | `project-sessions-retro` main session |
+| Root-cause analysis | `root-cause-analysis` |
+| Plan design | `deep-task-planning` |
+| OpenSpec follow-up routing | `openspec-propose`, `retro:project-ledger proposals` |
+| Instruction artifact changes | `instruction-artifact-tuning`, `instruction-artifact-reviewer` |
+| Code/test/tooling changes | relevant domain skill, `code-quality-audit`, `code-quality-reviewer`, `test-coverage-reviewer` |
+| Final delivery control | `session-delivery-reviewer` |
+
+Fill audit fields/observations/trends/root causes/plans with human judgment, then refresh progress, validate links, and preview proposal writes:
 
 ```sh
-npm run retro:project-ledger -- status --input retro.json --limit 20
-npm run retro:project-ledger -- transcript --input retro.json --session <session-ref> --include-content --out <local-transcript.json> --overwrite
-npm run retro:project-ledger -- patch-sessions --input retro.json --patch <batch-audit.json>
-npm run retro:project-ledger -- refresh --input retro.json
-npm run retro:project-ledger -- validate --input retro.json
-npm run retro:project-ledger -- proposals --input retro.json --root <project-path> --dry-run
+npm run retro:project-ledger -- status --input retro --limit 50 --format json
+npm run retro:project-ledger -- transcript --input retro --session <session-ref> --include-content --format json --out <repo-local-ignored-scratch-transcript.json> --overwrite
+npm run retro:project-ledger -- patch-sessions --input retro --patch <batch-audit.json>
+npm run retro:project-ledger -- refresh --input retro
+npm run retro:project-ledger -- validate --input retro
+npm run retro:project-ledger -- proposals --input retro --root <project-path> --dry-run
+npm run retro:project-ledger -- split --input retro.json --out retro
+npm run retro:project-ledger -- assemble --input retro --out assembled-retro.json
 ```
 
 After write scope is approved, materialize proposals and run the final strict gate:
 
 ```sh
-npm run retro:project-ledger -- proposals --input retro.json --root <project-path>
-npm run retro:project-ledger -- validate --input retro.json --root <project-path> --require-complete --require-proposals
+npm run retro:project-ledger -- proposals --input retro --root <project-path>
+npm run retro:project-ledger -- validate --input retro --root <project-path> --require-complete --require-proposals
 ```
 
-When root `retro.json` exists, `npm run prepush:validate` runs the complete ledger gate before push. Push fails if any session is not complete, any completed session lacks required audit fields, observations are not converted to trends, promoted trends lack root-cause analysis, root causes lack detailed plans, or plans lack generated OpenSpec proposals.
+When root `retro/` or legacy root `retro.json` exists, `npm run prepush:validate` runs the complete ledger gate before push. Push fails if any session is not complete, any completed session lacks required audit fields, observations are not converted to trends, promoted trends lack root-cause analysis, root causes lack detailed plans, or plans lack generated OpenSpec proposals.
 
 Use `--db`, `--data-dir`, and `--only-explicit` for controlled stores. Use `--show-paths` only when home-redacted paths are acceptable. Existing init output files are refused unless `--overwrite` is passed.
 
@@ -284,7 +317,7 @@ Routing and reviewer maps assume all/advanced artifacts; restricted profiles use
 - Broad independent tracks -> `orchestrator` from the `advanced` profile only after bounded workstreams, success criteria, and validation evidence are clear; if it is unavailable, use the Universal Development Loop serially or return an orchestration follow-up candidate.
 - Bounded first-pass helper work that benefits from cheap/offline local context, such as long-context retrieval, JSON extraction, scoped review, test ideas, planning, or tool-call checks -> `qwen-local-worker` from the `advanced` profile when the target machine has a configured `qwen-local` provider.
 - Session delivery-control review for transcript/summary, compaction/resume continuity, user goal, changed files, and validation output -> `session-delivery-reviewer`.
-- Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `project-sessions-retro` with `retro:project-ledger` when a durable session-to-proposal ledger is needed; all-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `all-sessions-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
+- Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `project-sessions-retro`. Full current-project retros require `retro:project-ledger`; large archives use `orchestrator` plus `session-observation-worker`; promoted trends use `root-cause-analysis`, plans use `deep-task-planning`, durable follow-ups use `openspec-propose`, and final material handoff uses `session-delivery-reviewer`. All-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `all-sessions-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
 - Documentation review selection: use `documentation-learning-quest` for guided onboarding, `file-review-quest` for one-file block review, `documentation-hardening-loop` for non-trivial doc/spec hardening, `openspec-consistency-review` for OpenSpec synchronization, and `codebase-audit-loop` only for exhaustive codebase audits.
 - Code maintainability/readability after non-trivial implementation, refactoring, large-file navigation, duplication, DRY/SOLID/YAGNI, or design-pattern trade-off work -> `code-quality-audit`; use `code-quality-reviewer` as the read-only gate.
 
@@ -333,6 +366,7 @@ Before archiving a completed OpenSpec change, write `openspec/changes/<change-id
 - `orchestrator`: prompt-only master coordination for broad independent work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead.
 - `all-sessions-retro`: analyze all reachable OpenCode sessions across projects and installs, synthesize trends/root causes, and when authorized design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
 - `project-sessions-retro`: analyze bounded/current-project session history through a `sessions -> observations -> trends -> root causes -> plans -> OpenSpec proposals` ledger.
+- `root-cause-analysis`: evidence-backed 5 Whys/causal-chain analysis for symptoms, recurrence paths, unknown-cause investigations, and remediation-ready cause records.
 
 ### Review And Learning
 
@@ -381,6 +415,7 @@ Before archiving a completed OpenSpec change, write `openspec/changes/<change-id
 - `deployment-config-reviewer`: config/deployment readiness and operational safety.
 - `protocol-api-reviewer`: framed/client API, schema evolution, correlation, reconnect.
 - `qwen-local-worker`: optional local Qwen3.6 first-pass helper for bounded long-context retrieval, JSON extraction, scoped review, test ideas, planning, and tool-call checks; requires a configured `qwen-local` OpenAI-compatible provider.
+- `session-observation-worker`: read-only project retro batch worker that reviews transcript JSON and returns sanitized audit/observation patch drafts for the main session to validate and apply.
 - `wire-protocol-reviewer`: byte-level protocol/transport review.
 - `legacy-evidence-reviewer`: requirement/design verification against legacy evidence.
 - `legacy-client-compatibility-reviewer`: compatibility with legacy clients/tools/workflows.

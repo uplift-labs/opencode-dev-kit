@@ -5,12 +5,13 @@ import { patchProjectSessionRetroSessions, summarizeProjectSessionRetroLedger } 
 import { createProjectSessionRetroProposals } from "./openspec-proposals.ts";
 import { refreshAnalysisProgress } from "./progress.ts";
 import { initProjectSessionRetroLedger } from "./sqlite-source.ts";
+import { readProjectSessionRetroLedgerStorage, writeProjectSessionRetroLedgerStorage } from "./storage.ts";
 import { readSessionTranscripts } from "./transcript.ts";
 import { readJsonFile, resolveInputPath, writeJsonFile } from "./utils.ts";
 import { validateProjectSessionRetroLedger } from "./validator.ts";
 
 type CliOptions = {
-  command: "init" | "validate" | "proposals" | "refresh" | "status" | "transcript" | "patch-sessions" | "help";
+  command: "init" | "validate" | "proposals" | "refresh" | "status" | "transcript" | "patch-sessions" | "split" | "assemble" | "help";
   dataDirs: string[];
   dbPaths: string[];
   dryRun: boolean;
@@ -39,19 +40,21 @@ function printUsage(): void {
   npm run retro:project-ledger -- status --input <path> [--limit <n>] [--format json|text]
   npm run retro:project-ledger -- transcript --session <session-ref-or-raw-id> [--input <path>] [--db <path>] [--include-content] [--out <path>] [--format json|text]
   npm run retro:project-ledger -- patch-sessions --input <path> --patch <path> [--dry-run] [--format json|text]
+  npm run retro:project-ledger -- split --input <retro.json> --out <retro-dir> [--overwrite]
+  npm run retro:project-ledger -- assemble --input <retro-dir> [--out <retro.json>] [--overwrite]
 
 Options:
   --db <path>              Read an explicit OpenCode SQLite database. Repeatable.
   --data-dir <path>        Add an OpenCode data directory containing opencode.db. Repeatable.
   --only-explicit          Use only --db and --data-dir paths.
   --project-root <path>    Current project root for session filtering.
-  --input <path>           Read an existing retro ledger JSON.
-  --out <path>             Write init output to this file. Default: <project-root>/retro.json.
+  --input <path>           Read an existing retro ledger JSON file or sharded directory.
+  --out <path>             Write output. Init default: <project-root>/retro. Paths ending in .json write one file; other paths write sharded directories.
   --patch <path>           Read a per-session audit patch JSON for patch-sessions.
   --session <id|ref>       Session raw id or redacted session ref. Repeatable.
   --include-content        Transcript mode includes raw prompt/text/tool content; use only for local analysis.
   --limit <n>              Limit status next-session refs. Default: 10.
-  --overwrite              Allow init to replace an existing output file.
+  --overwrite              Allow init, split, or assemble to replace an existing output target.
   --root <path>            Repository root for proposal file validation/generation. Default: current working directory.
   --require-complete       Validate every retro stage is complete before push/final handoff.
   --require-proposals      Validate generated proposal refs and files as a final handoff gate.
@@ -110,7 +113,7 @@ function parseArgs(args: string[]): CliOptions {
     options.command = "help";
     return options;
   }
-  if (!["init", "validate", "proposals", "refresh", "status", "transcript", "patch-sessions"].includes(command)) {
+  if (!["init", "validate", "proposals", "refresh", "status", "transcript", "patch-sessions", "split", "assemble"].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
   for (let index = 1; index < args.length; index++) {
@@ -281,7 +284,7 @@ export function runCli(args = process.argv.slice(2)): void {
     if (!options.projectRoot) {
       throw new Error("init requires --project-root.");
     }
-    const outPath = options.out ?? path.join(options.projectRoot, "retro.json");
+    const outPath = options.out ?? path.join(options.projectRoot, "retro");
     const ledger = initProjectSessionRetroLedger({
       dataDirs: options.dataDirs,
       dbPaths: options.dbPaths,
@@ -289,15 +292,39 @@ export function runCli(args = process.argv.slice(2)): void {
       showPaths: options.showPaths,
       useDefaultPaths: options.useDefaultPaths,
     });
-    writeJsonFile(outPath, ledger, { overwrite: options.overwrite });
+    writeProjectSessionRetroLedgerStorage(outPath, ledger, { overwrite: options.overwrite });
     console.log(`wrote ${outPath}`);
+    return;
+  }
+  if (options.command === "split") {
+    if (!options.input) {
+      throw new Error("split requires --input.");
+    }
+    if (!options.out) {
+      throw new Error("split requires --out.");
+    }
+    writeProjectSessionRetroLedgerStorage(options.out, readProjectSessionRetroLedgerStorage(options.input), { format: "directory", overwrite: options.overwrite });
+    console.log(`wrote ${options.out}`);
+    return;
+  }
+  if (options.command === "assemble") {
+    if (!options.input) {
+      throw new Error("assemble requires --input.");
+    }
+    const ledger = readProjectSessionRetroLedgerStorage(options.input);
+    if (options.out) {
+      writeJsonFile(options.out, ledger, { overwrite: options.overwrite });
+      console.log(`wrote ${options.out}`);
+    } else {
+      process.stdout.write(`${JSON.stringify(ledger, null, 2)}\n`);
+    }
     return;
   }
   if (options.command === "validate") {
     if (!options.input) {
       throw new Error("validate requires --input.");
     }
-    const result = validateProjectSessionRetroLedger(readJsonFile(options.input), { requireComplete: options.requireComplete, requireProposals: options.requireProposals, root: options.root });
+    const result = validateProjectSessionRetroLedger(readProjectSessionRetroLedgerStorage(options.input), { requireComplete: options.requireComplete, requireProposals: options.requireProposals, root: options.root });
     process.stdout.write(options.format === "json" ? `${JSON.stringify(result, null, 2)}\n` : renderValidation(result));
     if (!result.valid) {
       process.exitCode = 1;
@@ -308,10 +335,10 @@ export function runCli(args = process.argv.slice(2)): void {
     if (!options.input) {
       throw new Error("proposals requires --input.");
     }
-    const ledger = readJsonFile(options.input) as ProjectSessionRetroLedger;
+    const ledger = readProjectSessionRetroLedgerStorage(options.input);
     const result = createProjectSessionRetroProposals(options.root, ledger, { dryRun: options.dryRun });
     if (!options.dryRun && result.ledger.validation.errors.length === 0) {
-      fs.writeFileSync(options.input, `${JSON.stringify(result.ledger, null, 2)}\n`, "utf8");
+      writeProjectSessionRetroLedgerStorage(options.input, result.ledger, { overwrite: true });
     }
     process.stdout.write(options.format === "json" ? `${JSON.stringify(result, null, 2)}\n` : renderProposalResult(result));
     if (result.ledger.validation.errors.length > 0) {
@@ -323,8 +350,8 @@ export function runCli(args = process.argv.slice(2)): void {
     if (!options.input) {
       throw new Error("refresh requires --input.");
     }
-    const ledger = refreshAnalysisProgress(readJsonFile(options.input) as ProjectSessionRetroLedger);
-    fs.writeFileSync(options.input, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+    const ledger = refreshAnalysisProgress(readProjectSessionRetroLedgerStorage(options.input));
+    writeProjectSessionRetroLedgerStorage(options.input, ledger, { overwrite: true });
     process.stdout.write(options.format === "json" ? `${JSON.stringify(ledger.analysisProgress, null, 2)}\n` : `refreshed ${options.input}\n`);
     return;
   }
@@ -332,7 +359,7 @@ export function runCli(args = process.argv.slice(2)): void {
     if (!options.input) {
       throw new Error("status requires --input.");
     }
-    const ledger = readJsonFile(options.input) as ProjectSessionRetroLedger;
+    const ledger = readProjectSessionRetroLedgerStorage(options.input);
     const status = summarizeProjectSessionRetroLedger(ledger, { limit: options.limit });
     process.stdout.write(options.format === "json" ? `${JSON.stringify(status, null, 2)}\n` : renderStatus(ledger, options.limit));
     return;
@@ -341,7 +368,7 @@ export function runCli(args = process.argv.slice(2)): void {
     if (options.sessions.length === 0) {
       throw new Error("transcript requires at least one --session.");
     }
-    const inputLedger = options.input ? readJsonFile(options.input) as ProjectSessionRetroLedger : null;
+    const inputLedger = options.input ? readProjectSessionRetroLedgerStorage(options.input) : null;
     const result = readSessionTranscripts({
       dataDirs: options.dataDirs,
       dbPaths: options.dbPaths,
@@ -373,12 +400,12 @@ export function runCli(args = process.argv.slice(2)): void {
     if (!options.patch) {
       throw new Error("patch-sessions requires --patch.");
     }
-    const result = patchProjectSessionRetroSessions(readJsonFile(options.input) as ProjectSessionRetroLedger, readJsonFile(options.patch));
+    const result = patchProjectSessionRetroSessions(readProjectSessionRetroLedgerStorage(options.input), readJsonFile(options.patch));
     const validation = validateProjectSessionRetroLedger(result.ledger, { root: options.root });
     result.ledger.validation = { errors: validation.errors, warnings: validation.warnings };
     const payload = { changedSessions: result.changedSessions, progress: result.progress, validation };
     if (validation.errors.length === 0 && !options.dryRun) {
-      fs.writeFileSync(options.input, `${JSON.stringify(result.ledger, null, 2)}\n`, "utf8");
+      writeProjectSessionRetroLedgerStorage(options.input, result.ledger, { overwrite: true });
     }
     process.stdout.write(options.format === "json" ? `${JSON.stringify(payload, null, 2)}\n` : renderPatchResult(result, validation));
     if (validation.errors.length > 0) {

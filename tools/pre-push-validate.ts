@@ -129,8 +129,11 @@ export function buildPrePushValidationPlan(root: string, options: BuildPrePushVa
     { label: "Repository validation", command: "npm", args: ["run", "validate"] },
   ];
 
-  if (fs.existsSync(path.join(root, "retro.json"))) {
-    plan.push({ label: "Project session retro ledger", command: "npm", args: ["run", "retro:project-ledger", "--", "validate", "--input", "retro.json", "--root", ".", "--require-complete", "--require-proposals"] });
+  const shardedRetroRoot = path.join(root, "retro");
+  const hasShardedRetroRoot = fs.existsSync(shardedRetroRoot) && fs.statSync(shardedRetroRoot).isDirectory();
+  const retroInput = hasShardedRetroRoot ? "retro" : fs.existsSync(path.join(root, "retro.json")) ? "retro.json" : null;
+  if (retroInput != null) {
+    plan.push({ label: "Project session retro ledger", command: "npm", args: ["run", "retro:project-ledger", "--", "validate", "--input", retroInput, "--root", ".", "--require-complete", "--require-proposals"] });
   }
 
   if (fs.existsSync(path.join(root, "openspec"))) {

@@ -46,6 +46,28 @@ function createDeliveryContextDb(dbPath: string, rawSessionId: string): void {
   }
 }
 
+function createDeliveryContextDbWithParent(dbPath: string, rootSessionId: string, childSessionId: string): void {
+  const db = new DatabaseSync(dbPath);
+  try {
+    db.exec([
+      "create table session (id text primary key, parent_id text, time_created integer, time_updated integer);",
+      "create table session_input (id text primary key, session_id text not null, prompt text, time_created integer);",
+      "create table message (id text primary key, session_id text not null, time_created integer, data text);",
+      "create table todo (session_id text not null, content text, status text, priority text, position integer, time_created integer);",
+      "create table event (id text primary key, session_id text not null, time_created integer, type text, properties text);",
+    ].join("\n"));
+    db.prepare("insert into session (id, parent_id, time_created, time_updated) values (?, ?, ?, ?)").run(rootSessionId, null, 1700000000000, 1700000001000);
+    db.prepare("insert into session (id, parent_id, time_created, time_updated) values (?, ?, ?, ?)").run(childSessionId, rootSessionId, 1700000002000, 1700000003000);
+    db.prepare("insert into session_input (id, session_id, prompt, time_created) values (?, ?, ?, ?)").run("input-root", rootSessionId, `user request ${rootSessionId}`, 1700000000001);
+    db.prepare("insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)").run("message-root", rootSessionId, 1700000000002, JSON.stringify({ role: "user", content: `message request ${rootSessionId}` }));
+    db.prepare("insert into todo (session_id, content, status, priority, position, time_created) values (?, ?, ?, ?, ?, ?)").run(rootSessionId, `todo ${rootSessionId}`, "pending", "high", 1, 1700000000003);
+    db.prepare("insert into event (id, session_id, time_created, type, properties) values (?, ?, ?, ?, ?)").run("question-asked-root", rootSessionId, 1700000000004, "question.asked", JSON.stringify({ id: "question-root", questions: [{ question: "Choose scope" }] }));
+    db.prepare("insert into event (id, session_id, time_created, type, properties) values (?, ?, ?, ?, ?)").run("question-replied-root", rootSessionId, 1700000000005, "question.replied", JSON.stringify({ requestID: "question-root", answers: [[`Chosen ${rootSessionId}`]] }));
+  } finally {
+    db.close();
+  }
+}
+
 const tests: TestCase[] = [
   {
     name: "exposes canonical object-form server plugin shape",
@@ -71,7 +93,7 @@ const tests: TestCase[] = [
     run: async () => {
       const hooks = await plugin.server({} as never);
       assert(hooks.tool?.[SESSION_DELIVERY_CONTEXT_TOOL] != null, "Plugin must register session_delivery_context tool.");
-      assert(hooks.tool?.[SESSION_DELIVERY_CONTEXT_TOOL]?.description.includes("current OpenCode session"), "Custom tool description should scope evidence to current session.");
+      assert(hooks.tool?.[SESSION_DELIVERY_CONTEXT_TOOL]?.description.includes("root parent session"), "Custom tool description should document root parent session resolution for subagent reviewers.");
     },
   },
   {
@@ -102,6 +124,44 @@ const tests: TestCase[] = [
         assert(parsed.questionReplies?.length === 1, `Custom tool should report question reply, got ${output}`);
         assert(metadataCalls.length === 1, "Custom tool should publish metadata once.");
         assert(!output.includes(rawSessionId), "Custom tool output must redact raw session id.");
+      } finally {
+        if (previousDataDir == null) {
+          delete process.env.OPENCODE_DATA_DIR;
+        } else {
+          process.env.OPENCODE_DATA_DIR = previousDataDir;
+        }
+      }
+    }),
+  },
+  {
+    name: "session delivery context custom tool resolves root parent session from a subagent child session id",
+    run: async () => withTempDataDir("tool-resolve-root", async (dataDir) => {
+      const rootSessionId = "session_root_secret";
+      const childSessionId = "session_child_secret";
+      createDeliveryContextDbWithParent(path.join(dataDir, "opencode.db"), rootSessionId, childSessionId);
+      const previousDataDir = process.env.OPENCODE_DATA_DIR;
+      process.env.OPENCODE_DATA_DIR = dataDir;
+      try {
+        const hooks = await plugin.server({} as never);
+        const result = await hooks.tool?.[SESSION_DELIVERY_CONTEXT_TOOL]?.execute({}, {
+          abort: new AbortController().signal,
+          agent: SESSION_DELIVERY_REVIEWER_AGENT,
+          ask: async () => undefined,
+          directory: dataDir,
+          messageID: "message_fixture",
+          metadata: () => { /* ignore */ },
+          sessionID: childSessionId,
+          worktree: dataDir,
+        });
+        const output = typeof result === "string" ? result : result?.output;
+        assert(typeof output === "string", "Custom tool should return JSON output string.");
+        const parsed = JSON.parse(output) as { questionReplies?: unknown[]; resolvedFromSessionRef?: string | null; session?: { counts?: Record<string, number>; sessionRef?: string }; todos?: { open?: unknown[] }; userMessages?: Array<{ text?: string }>; };
+        assert(parsed.session?.counts?.openTodos === 1, `Custom tool invoked from child must resolve root open todo, got ${output}`);
+        assert(parsed.session?.counts?.userMessages === 2, `Custom tool invoked from child must resolve root user messages, got ${output}`);
+        assert(parsed.questionReplies?.length === 1, `Custom tool invoked from child must resolve root question reply, got ${output}`);
+        assert(parsed.resolvedFromSessionRef != null && parsed.resolvedFromSessionRef !== "", "Custom tool must report resolvedFromSessionRef when it walks to root.");
+        assert(parsed.userMessages?.some((message) => (message.text ?? "").includes("user request")) === true, "Custom tool invoked from child must return root session user messages.");
+        assert(!output.includes(rootSessionId) && !output.includes(childSessionId), "Custom tool output must redact raw session ids (root and child).");
       } finally {
         if (previousDataDir == null) {
           delete process.env.OPENCODE_DATA_DIR;

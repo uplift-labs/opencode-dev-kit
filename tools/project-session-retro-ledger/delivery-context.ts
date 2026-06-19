@@ -54,6 +54,7 @@ export type SessionDeliveryContextResult = {
     sessionRef: string;
     sourceRef: string;
   } | null;
+  resolvedFromSessionRef: string | null;
   todos: {
     all: DeliveryContextTodo[];
     open: DeliveryContextTodo[];
@@ -67,6 +68,7 @@ export type ReadSessionDeliveryContextOptions = {
   dataDirs?: string[];
   dbPaths?: string[];
   generatedAt?: string;
+  resolveRoot?: boolean;
   sessionId: string;
   useDefaultPaths?: boolean;
 };
@@ -159,6 +161,31 @@ function selectedRows(db: InstanceType<typeof DatabaseSync>, schema: DbSchema, r
     const rawID = String(row.id);
     return requested.rawIds.has(rawID) || requested.candidateRefs.has(hashRef("session", rawID));
   });
+}
+
+function resolveRootRow(db: InstanceType<typeof DatabaseSync>, schema: DbSchema, startRow: SessionRow): SessionRow {
+  const sessionColumns = schema.get("session");
+  if (sessionColumns == null || !sessionColumns.has("parent_id")) {
+    return startRow;
+  }
+  const visited = new Set<string>([String(startRow.id)]);
+  let current: SessionRow = startRow;
+  for (let depth = 0; depth < 64; depth += 1) {
+    const parentId = stringValue((current as Record<string, unknown>).parent_id);
+    if (parentId == null) {
+      break;
+    }
+    if (visited.has(parentId)) {
+      break;
+    }
+    visited.add(parentId);
+    const parentRow = db.prepare("select * from session where id = ?").get(parentId) as SessionRow | undefined;
+    if (parentRow == null) {
+      break;
+    }
+    current = parentRow;
+  }
+  return current;
 }
 
 function redactKnownSessionId(value: unknown, rawSessionId: string): unknown {
@@ -382,6 +409,7 @@ function emptyResult(options: ReadSessionDeliveryContextOptions, missingRef: str
     missingSessions: [missingRef],
     permissionReplies: [],
     questionReplies: [],
+    resolvedFromSessionRef: null,
     session: null,
     todos: { all: [], open: [] },
     tool: "opencode-session-delivery-context",
@@ -390,7 +418,7 @@ function emptyResult(options: ReadSessionDeliveryContextOptions, missingRef: str
   };
 }
 
-function contextForRow(db: InstanceType<typeof DatabaseSync>, schema: DbSchema, sourceRef: string, row: SessionRow, options: ReadSessionDeliveryContextOptions, warnings: string[]): SessionDeliveryContextResult {
+function contextForRow(db: InstanceType<typeof DatabaseSync>, schema: DbSchema, sourceRef: string, row: SessionRow, options: ReadSessionDeliveryContextOptions, warnings: string[], resolvedFromSessionRef: string | null): SessionDeliveryContextResult {
   const rawSessionId = String(row.id);
   warnMissingColumns(schema, "todo", ["session_id"], "todo table missing session_id column; todo evidence unavailable", warnings);
   warnMissingColumns(schema, "session_input", ["session_id"], "session_input table missing session_id column; direct prompt evidence unavailable", warnings);
@@ -413,6 +441,7 @@ function contextForRow(db: InstanceType<typeof DatabaseSync>, schema: DbSchema, 
     missingSessions: [],
     permissionReplies: events.permissionReplies,
     questionReplies: events.questionReplies,
+    resolvedFromSessionRef,
     session: {
       counts: {
         openTodos: openTodos.length,
@@ -460,7 +489,11 @@ export function readSessionDeliveryContext(options: ReadSessionDeliveryContextOp
       }
       const rows = selectedRows(db, schema, requested);
       if (rows.length > 0) {
-        return contextForRow(db, schema, hashRef("source", dbPath), rows[0], options, warnings);
+        const startRow = rows[0];
+        const startId = String(startRow.id);
+        const targetRow = options.resolveRoot ? resolveRootRow(db, schema, startRow) : startRow;
+        const resolvedFromSessionRef = options.resolveRoot && String(targetRow.id) !== startId ? hashRef("session", startId) : null;
+        return contextForRow(db, schema, hashRef("source", dbPath), targetRow, options, warnings, resolvedFromSessionRef);
       }
     } catch (error) {
       warnings.push(`${hashRef("source", dbPath)} error: ${error instanceof Error ? error.message : String(error)}`);

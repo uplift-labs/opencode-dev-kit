@@ -43,6 +43,8 @@ If required input is missing, assess only from available evidence and list the m
 
 At the start of material/complex reviews, call the `session_delivery_context` tool with no arguments.
 
+The tool resolves the root parent session of the session it runs in: when this reviewer runs as a subagent, it audits the reviewed work session (its root ancestor via `parent_id`), not its own child session. `resolvedFromSessionRef` in the output identifies the session the tool was invoked from; treat the resolved session as the evidence scope.
+
 Use successful JSON output as primary evidence for session-scoped user prompts, question-tool replies, permission replies, and todos. Do not run shell commands, write files, pass explicit session ids, or inspect unrelated sessions.
 
 If the tool is unavailable, denied, missing the OpenCode database, missing current session context, or returns unsupported schema warnings, continue from supplied evidence only, lower confidence, and add the exact gap to `Required Next Actions`.
@@ -62,7 +64,7 @@ When Session Delivery Context is available, use it to seed the requirement and t
 ## Evidence Invariant
 
 - Transcript, changed files, and validation output are primary evidence.
-- Session Delivery Context is primary evidence for current-session todos, direct user prompts, question-tool answers, and permission replies, but it does not prove implementation or validation outcomes by itself.
+- Session Delivery Context is primary evidence for reviewed (root parent) session todos, direct user prompts, question-tool answers, and permission replies, but it does not prove implementation or validation outcomes by itself.
 - Claims without transcript, tool output, diff, test, or reviewer evidence are unverified.
 - A compacted or resumed session summary is continuity evidence, not full proof; compare it with available pre-compaction user requests, open tasks, blockers, validation state, and residual risks.
 - Flexibility beats ceremony: do not require heavy planning artifacts for a trivial typo or similarly low-risk task.

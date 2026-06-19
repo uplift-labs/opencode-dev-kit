@@ -8,6 +8,7 @@ export const SESSION_DELIVERY_REVIEWER_AGENT = "session-delivery-reviewer";
 
 type SessionDeliveryContextResult = {
   missingSessions: unknown[];
+  resolvedFromSessionRef: string | null;
   session: {
     counts: {
       openTodos: number;
@@ -20,7 +21,7 @@ type SessionDeliveryContextResult = {
 };
 
 type SessionDeliveryContextModule = {
-  readSessionDeliveryContext: (options: { sessionId: string }) => SessionDeliveryContextResult;
+  readSessionDeliveryContext: (options: { resolveRoot?: boolean; sessionId: string }) => SessionDeliveryContextResult;
 };
 
 async function loadSessionDeliveryContextModule(): Promise<SessionDeliveryContextModule> {
@@ -48,15 +49,16 @@ export default {
     tool: {
       [SESSION_DELIVERY_CONTEXT_TOOL]: {
         args: {},
-        description: "Return redacted delivery-review context for the current OpenCode session: user prompts, question replies, permission replies, and todos.",
+        description: "Return redacted delivery-review context for the OpenCode session being reviewed: user prompts, question replies, permission replies, and todos. When the reviewer runs as a subagent, resolves the root parent session so it audits the reviewed work session, not its own child session.",
         async execute(_args, context) {
           const { readSessionDeliveryContext } = await loadSessionDeliveryContextModule();
-          const result = readSessionDeliveryContext({ sessionId: context.sessionID });
+          const result = readSessionDeliveryContext({ resolveRoot: true, sessionId: context.sessionID });
           context.metadata({
             metadata: {
               missingSessions: result.missingSessions.length,
               openTodos: result.session?.counts.openTodos ?? 0,
               questionReplies: result.session?.counts.questionReplies ?? 0,
+              resolvedFromSessionRef: result.resolvedFromSessionRef,
               sessionRef: result.session?.sessionRef ?? null,
               userMessages: result.session?.counts.userMessages ?? 0,
               warnings: result.warnings.length,
@@ -67,6 +69,7 @@ export default {
             metadata: {
               missingSessions: result.missingSessions.length,
               openTodos: result.session?.counts.openTodos ?? 0,
+              resolvedFromSessionRef: result.resolvedFromSessionRef,
               sessionRef: result.session?.sessionRef ?? null,
               warnings: result.warnings.length,
             },

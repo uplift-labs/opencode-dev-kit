@@ -29,6 +29,15 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Deterministic helper output may support root-cause analysis with evidence and missing-data signals, but root-cause judgment remains in the agent/reviewer layer.
 - For OpenCode retro analytics in this repository, durable TypeScript helper scripts are allowed when they materially reduce analysis work; add or update a focused test first, expose reusable helpers through `package.json`, and update the relevant retro skill to call them.
 
+## Self-Improving Instruction Loop
+
+- Route reviewer `Prevention Feedback` through `instruction-feedback-loop` before editing instruction artifacts.
+- Keep cost-band classification and draft-rule judgment in the main session or reviewer layer; deterministic helpers only persist, deduplicate, surface explicit conflicts, enforce transitions, and report `unknown`, `unreadable`, `unsupported`, or `blocked`.
+- Cheap feedback targeting exactly one `skill:<name>` or one `agent:<name>` may use the instant-edit channel after `instruction-artifact-reviewer` checks cohesion, conflict, and replay evidence.
+- Do not use instant edits for global `AGENTS.md`, files under `instructions/`, files under `templates/`, `new-skill-required`, medium/expensive cost, unknown root cause, or cross-repo ownership; create an OpenSpec follow-up or investigation instead.
+- Instant edits require a ledger entry from `npm run instruction:feedback -- --add ...`, then replay the same evidence through the same reviewer and close only after `applied -> replayed -> resolved`.
+- Before final handoff for sessions that produced prevention feedback, run `npm run instruction:feedback -- --pending` and account for unresolved entries in follow-ups or `Actionable Continuation Items`.
+
 ## Token Efficiency
 
 - Keep responses compact by default: outcome, changed files, validation, blockers, and only necessary rationale.

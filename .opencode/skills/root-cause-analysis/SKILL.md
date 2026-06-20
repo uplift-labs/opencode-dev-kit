@@ -33,6 +33,7 @@ Do not use it for a single obvious typo, purely stylistic feedback, or a quick s
 5. Choose the narrowest cause that explains the recurrence path and can be reduced by a practical change.
 6. Map unknowns to investigation evidence: logs, fixtures, validator gaps, transcript fields, reviewer contract changes, or instrumentation.
 7. Map confirmed or likely causes to prevention levers: automation, validation, routing, reviewer gate, instruction change, artifact split, training example, or process guard.
+8. When `Prevention Feedback` has `Likely Root Cause: unknown`, do not route it to instant instruction edits. Return an investigation route and, when durable tracking is needed, hand it to `openspec-propose` as an investigation follow-up.
 
 ## Output
 

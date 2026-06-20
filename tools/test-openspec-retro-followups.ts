@@ -51,12 +51,19 @@ function markdownText(value: unknown): string {
 }
 
 function problemTable(problems: Record<string, unknown>[]): string {
-  const lines = [
-    "| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target | Follow-up Change | No Follow-up Reason |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-  ];
+  const hasPreventionColumns = problems.some((problem) => problem.target === "instruction-artifact");
+  const lines = hasPreventionColumns
+    ? [
+      "| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target | Follow-up Change | No Follow-up Reason | Prevention Target | Draft Rule | Replay Evidence Ref |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    : [
+      "| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target | Follow-up Change | No Follow-up Reason |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ];
   for (const problem of problems) {
-    lines.push(`| ${markdownText(problem.problem)} | ${markdownText(problem.evidence)} | ${markdownText(problem.impact)} | ${markdownText(problem.rootCause)} | ${markdownText(problem.recommendation)} | ${markdownText(problem.confidence)} | ${markdownText(problem.target)} | ${markdownId(problem.followUpChangeId)} | ${markdownText(problem.noFollowUpReason)} |`);
+    const base = `| ${markdownText(problem.problem)} | ${markdownText(problem.evidence)} | ${markdownText(problem.impact)} | ${markdownText(problem.rootCause)} | ${markdownText(problem.recommendation)} | ${markdownText(problem.confidence)} | ${markdownText(problem.target)} | ${markdownId(problem.followUpChangeId)} | ${markdownText(problem.noFollowUpReason)} |`;
+    lines.push(hasPreventionColumns ? `${base} ${markdownText(problem.preventionTarget)} | ${markdownText(problem.draftRule)} | ${markdownText(problem.replayEvidenceRef)} |` : base);
   }
   return lines.join("\n");
 }
@@ -81,6 +88,7 @@ ${problemTable(problems)}
 
 - Project follow-up changes: ${outputIds(problems.filter((problem) => problem.target === "project-local").map((problem) => problem.followUpChangeId))}.
 - \`opencode-dev-kit\` proposals/changes: ${outputIds(problems.filter((problem) => problem.target === "opencode-dev-kit").map((problem) => problem.followUpChangeId))}.
+- Instruction-artifact follow-up changes: ${outputIds(problems.filter((problem) => problem.target === "instruction-artifact").map((problem) => problem.followUpChangeId))}.
 - No findings reason: ${problems.length === 0 ? "Evidence reviewed; no actionable findings." : "n/a"}.
 
 ## Archive Gate Decision
@@ -145,6 +153,26 @@ function unknownCauseProblems(): Record<string, unknown>[] {
   ];
 }
 
+function instructionArtifactProblems(): Record<string, unknown>[] {
+  return [
+    {
+      problem: "Reviewer missed recurrence prevention",
+      evidence: "P1 finding had no prevention feedback",
+      impact: "Same reviewer contract gap recurs",
+      rootCause: "Reviewer output contract lacked durable Prevention Feedback fields",
+      recommendation: "Add durable Prevention Feedback contract to reviewer agents",
+      confidence: "high",
+      target: "instruction-artifact",
+      followUpChangeId: null,
+      noFollowUpReason: null,
+      preventionTarget: "agent:code-quality-reviewer",
+      recurrencePath: "Reviewer contract should have required prevention feedback for P1 findings.",
+      draftRule: "Reviewer agents should return Prevention Feedback for P0/P1 findings.",
+      replayEvidenceRef: "fixture:reviewer-output/p1-prevention-feedback",
+    },
+  ];
+}
+
 function writeChange(repo: string, changeId: string, markdown = retroMd(changeId)): void {
   const base = path.join(repo, "openspec", "changes", changeId);
   fs.mkdirSync(base, { recursive: true });
@@ -195,6 +223,27 @@ const tests: TestCase[] = [
       assert(second.changes.every((change) => change.status === "existing"), `Unknown root-cause follow-up must be idempotent, got ${JSON.stringify(second.changes)}.`);
       const gate = evaluateRetroGate(repo, "investigate-case");
       assert(gate.valid && gate.archiveAllowed, `Unknown root-cause follow-up should satisfy gate, got ${JSON.stringify(gate.errors)}.`);
+    }),
+  },
+  {
+    name: "follow-up helper carries instruction-artifact prevention fields",
+    run: () => withTempRepo("instruction-artifact", (repo) => {
+      writeChange(repo, "instruction-case", retroMd("instruction-case", instructionArtifactProblems()));
+      const result = createRetroFollowUps(repo, "instruction-case");
+      assert(result.changes.length === 1, `Expected one instruction follow-up, got ${JSON.stringify(result.changes)}.`);
+      const change = result.changes[0];
+      const proposal = fs.readFileSync(path.join(repo, change.path, "proposal.md"), "utf8");
+      const tasks = fs.readFileSync(path.join(repo, change.path, "tasks.md"), "utf8");
+      const spec = fs.readFileSync(path.join(repo, change.path, "specs", change.id, "spec.md"), "utf8");
+      assert(proposal.includes("## Prevention"), "Instruction follow-up proposal must include Prevention section.");
+      assert(proposal.includes("agent:code-quality-reviewer"), "Proposal must carry prevention target.");
+      assert(proposal.includes("Reviewer agents should return Prevention Feedback"), "Proposal must carry draft rule.");
+      assert(proposal.includes("fixture:reviewer-output/p1-prevention-feedback"), "Proposal must carry replay evidence reference.");
+      assert(tasks.includes("## Prevention Rule"), "Tasks must include Prevention Rule checklist.");
+      assert(tasks.includes("run replay gate"), "Tasks must require replay gate.");
+      assert(spec.includes("Requirement: Prevention Rule Surfaces In Instruction Artifact"), "Spec must include prevention rule requirement.");
+      const gate = evaluateRetroGate(repo, "instruction-case");
+      assert(gate.valid && gate.archiveAllowed, `Generated instruction follow-up must satisfy retro gate, got ${JSON.stringify(gate.errors)}.`);
     }),
   },
   {

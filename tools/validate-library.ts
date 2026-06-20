@@ -22,7 +22,35 @@ const errors: string[] = [];
 const warnings: string[] = [];
 const forbiddenCodeExtensions = new Set([".cjs", ".js", ".mjs", ".ps1", ".psd1", ".psm1", ".py", ".pyw"]);
 const mutationCapablePermissionKeys = new Set(["bash", "edit", "task", "external_directory"]);
+const preventionFeedbackReviewerFiles = [
+  "code-quality-reviewer.md",
+  "deployment-config-reviewer.md",
+  "implementation-readiness-reviewer.md",
+  "instruction-artifact-reviewer.md",
+  "legacy-client-compatibility-reviewer.md",
+  "legacy-evidence-reviewer.md",
+  "openspec-architecture-reviewer.md",
+  "performance-reliability-reviewer.md",
+  "protocol-api-reviewer.md",
+  "rust-concurrency-reviewer.md",
+  "session-delivery-reviewer.md",
+  "test-coverage-reviewer.md",
+  "wire-protocol-reviewer.md",
+];
+const preventionFeedbackRequiredText = [
+  "## Prevention Feedback",
+  "Recurrence Path",
+  "Prevention Target",
+  "Prevention Cost",
+  "Draft Rule",
+  "Replay Evidence",
+];
 const agentTextContracts: TextContract[] = [
+  ...preventionFeedbackReviewerFiles.map((fileName) => ({
+    fileName,
+    label: `${fileName} must define Prevention Feedback output contract`,
+    requiredText: preventionFeedbackRequiredText,
+  })),
   {
     fileName: "session-delivery-reviewer.md",
     label: "session-delivery-reviewer must require delivery-control safeguards",
@@ -661,9 +689,97 @@ function validateAgentsMd(root: string): void {
   for (const fallback of ["unknown", "unreadable", "unsupported", "blocked"]) {
     requireTextContains(agentsText, fallback, "AGENTS.md deterministic helper automation fallback policy", agentsPath);
   }
+  requireTextContains(agentsText, "## Self-Improving Instruction Loop", "AGENTS.md self-improving instruction loop policy", agentsPath);
+  requireTextContains(agentsText, "instruction-feedback-loop", "AGENTS.md self-improving instruction loop policy", agentsPath);
+  requireTextContains(agentsText, "Do not use instant edits for global `AGENTS.md`", "AGENTS.md instant-edit prohibition", agentsPath);
+  requireTextContains(agentsText, "npm run instruction:feedback -- --add", "AGENTS.md instruction feedback ledger handoff", agentsPath);
+  requireTextContains(agentsText, "applied -> replayed -> resolved", "AGENTS.md replay gate policy", agentsPath);
+  requireTextContains(agentsText, "npm run instruction:feedback -- --pending", "AGENTS.md pending feedback handoff", agentsPath);
 
   if (/after (a )?non-trivial user-visible work( cycle)?,? (the main session offers|offer|use the built-in `?question`?|before stopping)/i.test(agentsText)) {
     addError(`AGENTS.md must not require routine post-task question handoff: ${agentsPath}`);
+  }
+}
+
+function validateInstructionFeedbackContracts(root: string): void {
+  const helperPath = path.join(root, "tools", "instruction-feedback-ledger.ts");
+  if (fileExists(helperPath)) {
+    const helperText = readText(helperPath);
+    for (const required of ["--add", "--pending", "--decay-report", "--check-bloat", "--replay-pending", "duplicate", "routeRuleWrite", "unsupportedRequest"]) {
+      requireTextContains(helperText, required, "instruction-feedback ledger helper CLI surface", helperPath);
+    }
+  }
+  const skillPath = path.join(root, ".opencode", "skills", "instruction-feedback-loop", "SKILL.md");
+  if (fileExists(skillPath)) {
+    const skillText = readText(skillPath);
+    for (const required of ["## Routing Matrix", "Prevention Feedback", "Prevention Cost", "not helper code", "instruction-artifact-reviewer", "applied -> replayed -> resolved", "openspec-propose", "unknown"]) {
+      requireTextContains(skillText, required, "instruction-feedback-loop skill contract", skillPath);
+    }
+  }
+}
+
+function hasInstallForceOverwriteExemption(root: string): boolean {
+  const changesRoot = path.join(root, "openspec", "changes");
+  if (!directoryExists(changesRoot)) {
+    return false;
+  }
+  for (const changeDir of listDirectories(changesRoot)) {
+    const proposalPath = path.join(changeDir, "proposal.md");
+    if (!fileExists(proposalPath)) {
+      continue;
+    }
+    if (readText(proposalPath).includes("<!-- install-force-overwrite-default-exemption:")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function bodyOfFunction(text: string, functionName: string): string | null {
+  const startMatch = text.match(new RegExp(`function\\s+${escapeRegExp(functionName)}\\s*\\([^)]*\\)\\s*(?::\\s*[^\\{]+)?\\{`));
+  if (startMatch == null || startMatch.index == null) {
+    return null;
+  }
+  let depth = 0;
+  let bodyStart = -1;
+  for (let index = startMatch.index; index < text.length; index++) {
+    const char = text[index];
+    if (char === "{") {
+      depth++;
+      if (bodyStart < 0) {
+        bodyStart = index + 1;
+      }
+    } else if (char === "}") {
+      depth--;
+      if (depth === 0 && bodyStart >= 0) {
+        return text.slice(bodyStart, index);
+      }
+    }
+  }
+  return null;
+}
+
+function validateInstallForceOverwriteGuard(root: string): void {
+  const installerPath = path.join(root, "tools", "install-opencode-global.ts");
+  if (!fileExists(installerPath)) {
+    return;
+  }
+  const installerText = readText(installerPath);
+  const runBody = bodyOfFunction(installerText, "run");
+  const parseBody = bodyOfFunction(installerText, "parseArgs") ?? "";
+  const hasExemption = hasInstallForceOverwriteExemption(root);
+  const defaultForceOverwrite = /options\.forceOverwrite\s*=\s*true/.test(parseBody) || (runBody != null && /options\.forceOverwrite\s*=\s*true/.test(runBody.split("collectDrift(")[0] ?? runBody));
+  let bypassesDrift = false;
+  if (runBody == null) {
+    bypassesDrift = true;
+  } else {
+    const collectIndex = runBody.indexOf("collectDrift(");
+    const installCallMatches = Array.from(runBody.matchAll(/\b(installFile|installDirectory|installAgentsMd)\s*\(/g));
+    const firstInstallIndex = installCallMatches.length > 0 ? installCallMatches[0].index ?? -1 : -1;
+    bypassesDrift = collectIndex < 0 || (firstInstallIndex >= 0 && firstInstallIndex < collectIndex);
+  }
+  if ((defaultForceOverwrite || bypassesDrift) && !hasExemption) {
+    addError(`install-opencode-global force-overwrite default guard failed: default path must call collectDrift before install and must not make force-overwrite default without <!-- install-force-overwrite-default-exemption: <reason> -->.`);
   }
 }
 
@@ -792,7 +908,7 @@ function validateDevKitContract(root: string): void {
   }
 
   const scripts = readPackageScripts(root);
-  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "retro:inventory", "retro:analyze", "retro:project-ledger", "openspec:validate", "openspec:gate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
+  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "instruction:feedback", "code-quality:inventory", "retro:inventory", "retro:analyze", "retro:project-ledger", "openspec:validate", "openspec:gate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
     if (!scripts[script]) {
       addError(`package.json missing required opencode-dev-kit script '${script}'`);
     }
@@ -811,6 +927,15 @@ function validateDevKitContract(root: string): void {
   }
   if (scripts["retro:project-ledger"] && scripts["retro:project-ledger"] !== "node tools/opencode-project-session-retro-ledger.ts") {
     addError("package.json script 'retro:project-ledger' must run node tools/opencode-project-session-retro-ledger.ts.");
+  }
+  if (scripts["instruction:feedback"] && scripts["instruction:feedback"] !== "node tools/instruction-feedback-ledger.ts") {
+    addError("package.json script 'instruction:feedback' must run node tools/instruction-feedback-ledger.ts.");
+  }
+  if (scripts.test && !/(^|&&)\s*node\s+tools\/test-instruction-feedback-ledger\.ts(\s|$|&&)/.test(scripts.test)) {
+    addError("package.json script 'test' must include node tools/test-instruction-feedback-ledger.ts.");
+  }
+  if (scripts.test && !/(^|&&)\s*node\s+tools\/test-install-opencode-global\.ts(\s|$|&&)/.test(scripts.test)) {
+    addError("package.json script 'test' must include node tools/test-install-opencode-global.ts.");
   }
   if (scripts.test && !/(^|&&)\s*node\s+tools\/test-project-session-retro-ledger\.ts(\s|$|&&)/.test(scripts.test)) {
     addError("package.json script 'test' must include node tools/test-project-session-retro-ledger.ts.");
@@ -1203,6 +1328,8 @@ function main(): void {
   validateOpenCodeConfigFiles(root);
   validateReadme(root, skillNames, agentNames, instructionNames);
   validateAgentsMd(root);
+  validateInstructionFeedbackContracts(root);
+  validateInstallForceOverwriteGuard(root);
 
   const markdownFiles = getMarkdownFiles(root);
   for (const file of markdownFiles) {

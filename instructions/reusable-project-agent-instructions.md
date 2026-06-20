@@ -63,6 +63,14 @@ Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> S
 - If deterministic helper code cannot answer something from its inputs, report `unknown`, `unreadable`, `unsupported`, or `blocked` instead of guessing.
 - Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
 
+## Self-Improving Instruction Loop
+
+- Route reviewer `Prevention Feedback` into one channel: instant edit for cheap single skill/agent fixes, OpenSpec follow-up for global or larger changes, or investigation when root cause is `unknown`.
+- Do not instantly edit global `AGENTS.md`, files under `instructions/`, files under `templates/`, `new-skill-required`, medium/expensive feedback, unknown root cause, or cross-repo artifacts.
+- Keep cost-band classification and draft-rule judgment out of deterministic helper code; helpers may persist, deduplicate, enforce transitions, and report explicit `unknown`/`blocked` states.
+- For instant edits, persist a ledger entry, run `instruction-artifact-reviewer` before the edit, replay the same evidence after the edit, and close only after `applied -> replayed -> resolved`.
+- For OpenSpec-backed repositories, group medium/expensive or broad prevention feedback into follow-up changes instead of leaving loose final-message backlog.
+
 ## Git And Remote State
 
 - Do not commit, push, merge, delete source artifacts, or alter remote state unless explicitly requested and allowed by repository policy.

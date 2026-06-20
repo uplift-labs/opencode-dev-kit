@@ -45,3 +45,10 @@ Apply the same process for every task, scaled to the size and risk of the change
 - Do not use Headroom MCP for small outputs, exact code under active edit, short errors already visible, or safety-critical details that must be quoted exactly.
 - Prefer deterministic helpers, validators, fixtures, or generated reports over repeated manual inspection.
 - Reviewer agents are read-only leaf validators by default.
+
+## Self-Improving Instruction Loop
+
+- If reviewer output includes `Prevention Feedback`, route it to exactly one channel: cheap single skill/agent instant edit, OpenSpec follow-up, or unknown-root-cause investigation.
+- Do not instantly edit global `AGENTS.md`, `instructions/`, `templates/`, `new-skill-required`, medium/expensive feedback, unknown root cause, or cross-repo artifacts.
+- Instant prevention edits require a ledger entry, `instruction-artifact-reviewer` before edit, replay of the same evidence after edit, and closure only after `applied -> replayed -> resolved`.
+- Deterministic helpers must not classify cost bands or draft rules; they persist evidence, deduplicate exact matches, enforce transitions, and report `unknown` or `blocked`.

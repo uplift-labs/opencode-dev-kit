@@ -53,6 +53,19 @@ Each reusable reviewer body should include a compact `## Leaf Contract` section:
 - `P1 material`: correctness, readiness, acceptance, compatibility, reliability, performance, or security risk.
 - `P2 minor`: clarity, coverage, maintainability, or tuning risk that is not blocking.
 
+## Prevention Feedback
+
+Reusable reviewer agents include an optional `Prevention Feedback` section. For each P0/P1 finding with non-`unknown` root cause, return:
+
+- `Severity`: P0 | P1.
+- `Recurrence Path`: existing instruction, skill, or agent that should have prevented recurrence, and why it missed.
+- `Prevention Target`: `AGENTS.md` | `skill:<name>` | `agent:<name>` | `new-skill-required`.
+- `Prevention Cost`: cheap | medium | expensive.
+- `Draft Rule`: proposed rule text for main-session review, not a finalized edit.
+- `Replay Evidence`: exact diff, fixture, command, or session context that should fail to reproduce after the rule is applied.
+
+For nit/P2 findings, return `Prevention Feedback: none` unless the main-session prompt explicitly asks.
+
 ## Output Schema
 
 Return:

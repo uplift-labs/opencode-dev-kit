@@ -25,7 +25,7 @@ Technology adapters may change commands and constraints, but not the loop.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
 - `templates/`: project bootstrap and CI templates for applying the Universal Development Loop to another repository.
 - `profiles/`: install manifests that choose artifacts without creating separate workflows.
-- `tools/`: TypeScript validation, install, project bootstrap, doctor, inventory, code-quality, and OpenCode session-retro ledger tooling for this kit.
+- `tools/`: TypeScript validation, install, project bootstrap, doctor, inventory, code-quality, `instruction:feedback`, and OpenCode session-retro ledger tooling for this kit.
 
 ## Prerequisites
 
@@ -42,7 +42,9 @@ Install all repository skills, all reviewer agents, and a reusable global `AGENT
 npm run install:global
 ```
 
-By default this installs into `~/.config/opencode`, syncs every repository skill to `skills/`, syncs every repository agent to `agents/`, and adds `instructions/global-opencode-agent-instructions.md` as an idempotent marked block in `~/.config/opencode/AGENTS.md` without deleting existing user instructions. Full sync prunes destination skill directories and agent `.md` files that are not present in the selected install set. Existing changed or pruned files/directories are backed up under `.backups/agents-and-skills/` before replacement/removal, outside OpenCode's loader folders.
+By default this installs into `~/.config/opencode`, syncs every repository skill to `skills/`, syncs every repository agent to `agents/`, and adds `instructions/global-opencode-agent-instructions.md` as an idempotent marked block in `~/.config/opencode/AGENTS.md` without deleting existing user instructions. Full sync prunes destination skill directories and agent `.md` files that are not present in the selected install set.
+
+Default install now detects source-vs-destination drift before writing. If an installed skill, agent, plugin, or support tool differs from source, the installer refuses to overwrite it and prints recovery commands. This protects local prevention-rule improvements from being silently discarded.
 
 Useful options:
 
@@ -51,12 +53,17 @@ Useful options:
 - `--profile <standard|strict|advanced>`: restrict the installed artifact set without changing the Universal Development Loop.
 - `--agents-md-source <path>`: install a custom source file into the global `AGENTS.md` block.
 - `--skip-agents-md`: install only skills and agents.
+- `--audit`: report drift with source and destination hashes without writing, removing, or backing up.
+- `--pull-back`: generate one investigation OpenSpec change per drifted artifact under `openspec/changes/install-pullback-<run-stamp>-<slug>/` without overwriting destination files.
+- `--force-overwrite`: opt into the legacy overwrite-with-backup behavior when you intentionally want to discard local destination changes.
 - `--no-prune`: keep destination skills/agents not present in this repository.
 - `--no-backup`: replace changed or pruned artifacts without creating backup copies.
 
 Use `--agents-md-source AGENTS.md` only if you intentionally want this repository's local maintenance rules in the global `AGENTS.md` block.
 
 Restart OpenCode after installing; config-time files are loaded at startup.
+
+Migration note: CI or local scripts that depended on silent overwrite must add `--force-overwrite`, or migrate to `--audit`/`--pull-back` and review generated investigation changes. Clean installs and identical destinations are unaffected.
 
 Keep project-specific skills out of global discovery unless their descriptions explicitly scope them to that project. Global skills are visible in unrelated repositories through the skill catalog, so broad or local-product triggers add avoidable routing noise.
 
@@ -165,6 +172,18 @@ For instruction-artifact context-cost reviews in this kit, gather deterministic 
 npm run instruction:inventory -- --format markdown
 ```
 
+Route reviewer prevention feedback through the deterministic instruction-feedback ledger helper:
+
+```sh
+npm run instruction:feedback -- --add <feedback.json>
+npm run instruction:feedback -- --pending
+npm run instruction:feedback -- --decay-report
+npm run instruction:feedback -- --check-bloat --change <change-id>
+npm run instruction:feedback -- --replay-pending
+```
+
+The helper persists entries, detects exact-match duplicates, enforces replay status transitions, reports stale open/applied entries, and checks one-in-one-out evidence for broad instruction rules. It does not classify prevention cost or draft rule quality.
+
 Validate all OpenSpec changes with the first-class package gate:
 
 ```sh
@@ -194,6 +213,7 @@ For installer changes, also prove the no-write path before using a real config d
 
 ```sh
 npm run install:global -- --dry-run --config-dir <temp-config-dir>
+npm run install:global -- --audit --config-dir <temp-config-dir>
 ```
 
 For ports from a project-local prompt set, pass anchors that must not remain in reusable Markdown:
@@ -319,13 +339,13 @@ Routing and reviewer maps assume all/advanced artifacts; restricted profiles use
 - Broad independent tracks -> `orchestrator` from the `advanced` profile only after bounded workstreams, success criteria, and validation evidence are clear; if it is unavailable, use the Universal Development Loop serially or return an orchestration follow-up candidate.
 - Bounded first-pass helper work that benefits from cheap/offline local context, such as long-context retrieval, JSON extraction, scoped review, test ideas, planning, or tool-call checks -> `qwen-local-worker` from the `advanced` profile when the target machine has a configured `qwen-local` provider.
 - Session delivery-control review for current-session todos/user prompts/question replies plus transcript/summary, compaction/resume continuity, changed files, and validation output -> `session-delivery-reviewer`.
-- Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `project-sessions-retro`. Full current-project retros require `retro:project-ledger`; large archives use `orchestrator` plus `session-observation-worker`; promoted trends use `root-cause-analysis`, plans use `deep-task-planning`, durable follow-ups use `openspec-propose`, and final material handoff uses `session-delivery-reviewer`. All-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `all-sessions-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
+- Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; reviewer `Prevention Feedback` routing -> `instruction-feedback-loop`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `project-sessions-retro`. Full current-project retros require `retro:project-ledger`; large archives use `orchestrator` plus `session-observation-worker`; promoted trends use `root-cause-analysis`, plans use `deep-task-planning`, durable follow-ups use `openspec-propose`, and final material handoff uses `session-delivery-reviewer`. All-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `all-sessions-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
 - Documentation review selection: use `documentation-learning-quest` for guided onboarding, `file-review-quest` for one-file block review, `documentation-hardening-loop` for non-trivial doc/spec hardening, `openspec-consistency-review` for OpenSpec synchronization, and `codebase-audit-loop` only for exhaustive codebase audits.
 - Code maintainability/readability after non-trivial implementation, refactoring, large-file navigation, duplication, DRY/SOLID/YAGNI, or design-pattern trade-off work -> `code-quality-audit`; use `code-quality-reviewer` as the read-only gate.
 
 ## Reviewer Gate Map
 
-- Instruction artifacts, skills, agents, prompts, `AGENTS.md`, and README routing -> `instruction-artifact-reviewer`.
+- Instruction artifacts, skills, agents, prompts, `AGENTS.md`, and README routing -> `instruction-artifact-reviewer`; reviewer `Prevention Feedback` routing and replay closure -> `instruction-feedback-loop` plus `npm run instruction:feedback`.
 - Code health, maintainability, readability, file navigation, duplication, boundaries, and pragmatic refactoring -> `code-quality-reviewer`.
 - Implementation readiness, stable scope, blockers, validation path -> `implementation-readiness-reviewer`.
 - Session delivery alignment, current-session todos/user prompts/question replies, compaction continuity, proportional rigor, missed work, risks, validation/review completeness, and acceptance handoff -> `session-delivery-reviewer`.
@@ -365,6 +385,7 @@ Before archiving a completed OpenSpec change, write `openspec/changes/<change-id
 - `merge-request-author`: reviewer-friendly PR/MR title/body/validation/risk authoring.
 - `merge-request-review-loop`: autonomous MR/PR review follow-up for status checks, reviewer feedback, local fixes, revalidation, outcome handoff, and remote-action gates.
 - `merge-then-openspec-roi`: one-shot loop that batch-merges every open MR/PR on the default branch, refreshes the trunk, then drives the highest-ROI OpenSpec change to archive plus MR while emitting worktree prompts for safe parallel changes.
+- `instruction-feedback-loop`: route reviewer Prevention Feedback into instant instruction edits, OpenSpec follow-ups, or unknown-root-cause investigations with ledger and replay gates.
 - `instruction-artifact-tuning`: review/tune skills, agents, prompts, and `AGENTS.md`.
 - `orchestrator`: prompt-only master coordination for broad independent work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead.
 - `all-sessions-retro`: analyze all reachable OpenCode sessions across projects and installs, synthesize trends/root causes, and when authorized design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.

@@ -5,6 +5,7 @@
     "adaptive-delivery",
     "deep-task-planning",
     "code-quality-audit",
+    "instruction-feedback-loop",
     "instruction-artifact-tuning",
     "merge-request-author",
     "merge-request-review-loop",

@@ -215,6 +215,7 @@ function newLibraryFixture(name: string): string {
     "    \"doctor\": \"node tools/doctor.ts\",",
     "    \"project:inventory\": \"node tools/project-inventory.ts\",",
     "    \"instruction:inventory\": \"node tools/instruction-artifacts-inventory.ts\",",
+    "    \"instruction:feedback\": \"node tools/instruction-feedback-ledger.ts\",",
     "    \"code-quality:inventory\": \"node tools/code-quality-inventory.ts\",",
     "    \"retro:inventory\": \"node tools/opencode-session-retro-inventory.ts\",",
     "    \"retro:analyze\": \"node tools/opencode-session-retro-analyze.ts\",",
@@ -226,7 +227,7 @@ function newLibraryFixture(name: string): string {
     "    \"prepush:validate\": \"node tools/pre-push-validate.ts\",",
     "    \"validate\": \"node tools/validate-library.ts\",",
     "    \"validate:strict\": \"node tools/validate-library.ts --fail-on-warnings\",",
-    "    \"test\": \"node tools/test-library.ts && node tools/test-openspec-retro-gate.ts && node tools/test-openspec-retro-followups.ts && node tools/test-project-session-retro-ledger.ts && node tools/test-project-session-retro-ledger-cli.ts\"",
+    "    \"test\": \"node tools/test-library.ts && node tools/test-instruction-feedback-ledger.ts && node tools/test-install-opencode-global.ts && node tools/test-openspec-retro-gate.ts && node tools/test-openspec-retro-followups.ts && node tools/test-project-session-retro-ledger.ts && node tools/test-project-session-retro-ledger-cli.ts\"",
     "  }",
     "}",
     "",
@@ -247,6 +248,13 @@ function newLibraryFixture(name: string): string {
     "- When writing helper code for agent workflow, use explicit inputs, explicit outputs, schemas or fixtures, stable ordering, privacy-safe output, and no hidden heuristics.",
     "- Do not encode fuzzy scoring, probabilistic classification, model-like summarization, or unstated inference in helper code.",
     "- If deterministic helper code cannot answer from inputs, report unknown, unreadable, unsupported, or blocked instead.",
+    "",
+    "## Self-Improving Instruction Loop",
+    "",
+    "- Route reviewer `Prevention Feedback` through `instruction-feedback-loop` before editing instruction artifacts.",
+    "- Do not use instant edits for global `AGENTS.md`, files under `instructions/`, files under `templates/`, `new-skill-required`, medium/expensive cost, unknown root cause, or cross-repo ownership.",
+    "- Instant edits require a feedback entry from `npm run instruction:feedback -- --add ...`, then replay the same evidence and close only after `applied -> replayed -> resolved`.",
+    "- Before final handoff for sessions with prevention feedback, run `npm run instruction:feedback -- --pending` and account for unresolved entries.",
     "",
     "## Completion Handoff",
     "",
@@ -847,6 +855,52 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "validator rejects missing reviewer Prevention Feedback contract",
+    run: () => {
+      const fixture = newLibraryFixture("reviewer-prevention-feedback-contract");
+      writeText(path.join(fixture, ".opencode", "agents", "code-quality-reviewer.md"), lines([
+        "---",
+        "description: Reviews changed code quality.",
+        "mode: subagent",
+        "permission:",
+        "  read: allow",
+        "  glob: allow",
+        "  grep: allow",
+        "  bash: deny",
+        "  edit: deny",
+        "  task: deny",
+        "  question: deny",
+        "  skill: deny",
+        "  webfetch: deny",
+        "  websearch: deny",
+        "  todowrite: deny",
+        "  external_directory: deny",
+        "  lsp: deny",
+        "  doom_loop: deny",
+        "---",
+        "",
+        "You are a read-only code quality reviewer.",
+        "",
+        "## Leaf Contract",
+        "",
+        "Read/search-only leaf reviewer. No edits, fixes, commits/amends, merges, pushes, remote/destructive actions, `question`, tasks, skills, or nested agents. Stay in scope. Missing evidence -> exact main-session command/manual gate in `Actionable Continuation Items`; external domain -> `Needs external reviewer: <agent-name> required|optional`.",
+        "",
+        "## Output",
+        "",
+        "Return:",
+        "",
+        "- `Findings`: ordered by severity. Each finding includes `Severity`, `Evidence`, `Evidence Type`, `Impact`, `Likely Root Cause`, `Recommendation`, `Confidence`, `Needs external reviewer`.",
+        "- `Residual Risks`: known low-confidence gaps, missing evidence, or `none`.",
+        "- `Actionable Continuation Items`: concrete tasks for the main session, or `none`.",
+        "",
+      ]));
+      appendReadmeAgentCatalogEntry(fixture, "- `code-quality-reviewer`: Code quality reviewer.");
+      const result = invokeValidator(fixture);
+      assertFailure(result, "Missing reviewer Prevention Feedback section should fail validation.");
+      assertOutputContains(result, "Prevention Feedback", "Validation output should name the missing Prevention Feedback contract.");
+    },
+  },
+  {
     name: "validator rejects catalog drift",
     run: () => {
       const fixture = newLibraryFixture("catalog-drift");
@@ -1123,6 +1177,38 @@ const tests: TestCase[] = [
       const result = invokeValidator(fixture);
       assertFailure(result, "Legacy package scripts should fail validation.");
       assertOutputContains(result, "Package script 'validate'", "Legacy package script failure should name the script.");
+    },
+  },
+  {
+    name: "validator rejects force-overwrite installer default bypass without exemption",
+    run: () => {
+      const fixture = newLibraryFixture("installer-force-overwrite-guard");
+      writeText(path.join(fixture, "tools", "install-opencode-global.ts"), lines([
+        "#!/usr/bin/env node",
+        "function parseArgs() {",
+        "  const options = { forceOverwrite: false };",
+        "  options.forceOverwrite = true;",
+        "  return options;",
+        "}",
+        "function run() {",
+        "  const options = parseArgs();",
+        "  installFile(options);",
+        "}",
+        "function installFile(_options: unknown) {}",
+        "run();",
+        "",
+      ]));
+      const rejected = invokeValidator(fixture);
+      assertFailure(rejected, "Force-overwrite default bypass should fail validation.");
+      assertOutputContains(rejected, "force-overwrite default", "Validation output should name force-overwrite default guard.");
+
+      writeText(path.join(fixture, "openspec", "changes", "guard-exemption", "proposal.md"), lines([
+        "# Proposal: guard-exemption",
+        "",
+        "<!-- install-force-overwrite-default-exemption: fixture proves explicit exemption path -->",
+        "",
+      ]));
+      assertSuccess(invokeValidator(fixture), "Explicit force-overwrite default exemption marker should pass validation.");
     },
   },
   {

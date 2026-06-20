@@ -45,6 +45,22 @@ Read/search-only leaf reviewer. No edits, fixes, commits/amends, merges, pushes,
 - Automation safety: flag fuzzy scoring, probabilistic classification, model-like summarization, trigger-quality ranking, or unstated inference when presented as helper-code evidence.
 - OpenCode compatibility: skill folder names match `name`, skill descriptions are discoverable, agent frontmatter uses `mode: subagent`, and reviewer permissions are least privilege.
 - README sync: catalogs, routing map, reviewer gate map, validation commands, and curation rules match current artifacts.
+- Prevention feedback routing: cheap instant edits are limited to one skill or one agent file; global `AGENTS.md`, `instructions/`, `templates/`, `new-skill-required`, medium/expensive cost, and unknown root cause must route through OpenSpec or investigation.
+- Conflict surfacing: check the target artifact for overlapping or contradictory guidance, one-in-one-out concerns on broad artifacts, missing ledger evidence, and draft rules that generalize beyond the cited recurrence path.
+- Replay closure: a prevention entry is not closed unless replay evidence is present and the ledger records `applied -> replayed -> resolved`; `still-failing` replay must open a new entry against the applied rule.
+
+## Prevention Feedback
+
+For each P0/P1 finding with non-`unknown` `Likely Root Cause`, include `Prevention Feedback`:
+
+- `Severity`: P0 | P1.
+- `Recurrence Path`: existing instruction, skill, or agent that should have prevented recurrence, and why it missed.
+- `Prevention Target`: `AGENTS.md` | `skill:<name>` | `agent:<name>` | `new-skill-required`.
+- `Prevention Cost`: cheap | medium | expensive.
+- `Draft Rule`: proposed rule text for main-session review, not a finalized edit.
+- `Replay Evidence`: exact diff, fixture, command, or session context that should fail to reproduce after the rule is applied.
+
+For nit/P2 findings, return `Prevention Feedback: none` unless the main-session prompt explicitly asks.
 
 ## Output
 

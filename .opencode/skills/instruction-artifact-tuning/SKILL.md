@@ -43,6 +43,16 @@ For broad audits that include multiple skills/agents, global config, installed c
 - Remove obsolete instructions instead of adding override paragraphs.
 - If review or tuning exposes several concrete artifact follow-ups outside the approved scope, recommend grouping them into OpenSpec follow-up changes rather than expanding the current edit silently or leaving a loose backlog.
 
+## Prevention Feedback Quick Path
+
+Use this quick path only when `instruction-feedback-loop` routes a P0/P1 `Prevention Feedback` block to a cheap instant edit on exactly one `skill:<name>` or one `agent:<name>` file.
+
+- Refuse instant edits for global `AGENTS.md`, files under `instructions/`, files under `templates/`, medium/expensive changes, `new-skill-required`, unknown root cause, or cross-repo ownership; route those through OpenSpec follow-up or investigation.
+- Require a persisted feedback entry from `npm run instruction:feedback -- --add ...` before editing and keep the entry id in handoff evidence.
+- Run `instruction-artifact-reviewer` before the edit with the target artifact, recurrence path, draft rule, and replay evidence; block on conflict, cohesion, scope, or replay-signal findings.
+- Apply the smallest rule edit that addresses the recurrence path; remove or merge stale overlapping guidance instead of adding a broad override.
+- Run the replay gate by sending the same replay evidence to the same reviewer after the edit. Close the feedback entry only after `applied -> replayed -> resolved`; if replay is `still-failing`, reopen and create a new entry against the applied rule.
+
 ## Output
 
 For review-only work, return:

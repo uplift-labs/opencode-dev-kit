@@ -87,6 +87,19 @@ Do not force a fix for generated/vendor code, cohesive lookup tables, fixtures, 
 | Comment-dependent code | Rename, extract, simplify; keep comments for rationale, invariants, algorithms, and external contracts. |
 | Hidden side effects | Rename, separate query from command, create explicit effect boundary, use Command for queued/retryable/cancellable work. |
 
+## Prevention Feedback
+
+For each P0/P1 finding with non-`unknown` `Likely Root Cause`, include `Prevention Feedback`:
+
+- `Severity`: P0 | P1.
+- `Recurrence Path`: existing instruction, skill, or agent that should have prevented recurrence, and why it missed.
+- `Prevention Target`: `AGENTS.md` | `skill:<name>` | `agent:<name>` | `new-skill-required`.
+- `Prevention Cost`: cheap | medium | expensive.
+- `Draft Rule`: proposed rule text for main-session review, not a finalized edit.
+- `Replay Evidence`: exact diff, fixture, command, or session context that should fail to reproduce after the rule is applied.
+
+For nit/P2 findings, return `Prevention Feedback: none` unless the main-session prompt explicitly asks.
+
 ## Output
 
 Return:

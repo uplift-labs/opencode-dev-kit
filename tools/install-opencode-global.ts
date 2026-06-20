@@ -9,6 +9,9 @@ type Options = {
   agentsMdSource: string | null;
   configDir: string | null;
   dryRun: boolean;
+  audit: boolean;
+  pullBack: boolean;
+  forceOverwrite: boolean;
   noPrune: boolean;
   noBackup: boolean;
   profile: string;
@@ -36,6 +39,23 @@ type RelativeEntry =
   | { relative: string; type: "file" }
   | { relative: string; target: string; type: "symlink" };
 
+type DriftEntry = {
+  destination: string;
+  destinationHash: string;
+  label: string;
+  relative: string;
+  source: string;
+  sourceHash: string;
+  type: "file" | "directory";
+};
+
+type PullBackChange = {
+  id: string;
+  path: string;
+  status: "created" | "existing";
+  drift: DriftEntry;
+};
+
 const BEGIN_MARKER = "<!-- agents-and-skills:begin -->";
 const END_MARKER = "<!-- agents-and-skills:end -->";
 
@@ -50,6 +70,9 @@ Options:
   --profile <name>            Restrict install to profiles/<name>.json. Known: standard, strict,
                               advanced. Default: all repo skills/agents.
   --skip-agents-md           Install only skills and agents.
+  --audit                    Report source-vs-destination drift without writing.
+  --pull-back                Create investigation OpenSpec changes for drift without overwriting.
+  --force-overwrite          Opt into legacy overwrite-with-backup behavior for drift.
   --no-prune                 Keep destination skills/agents not present in this repository.
   --no-backup                Replace changed or pruned artifacts without backup copies.
   --dry-run, --what-if       Preview changes without writing files.
@@ -77,6 +100,9 @@ function parseArgs(args: string[]): Options {
     agentsMdSource: null,
     configDir: null,
     dryRun: false,
+    audit: false,
+    pullBack: false,
+    forceOverwrite: false,
     noPrune: false,
     noBackup: false,
     profile: "all",
@@ -111,9 +137,20 @@ function parseArgs(args: string[]): Options {
       options.noBackup = true;
     } else if (arg === "--dry-run" || arg === "--what-if" || arg === "-WhatIf") {
       options.dryRun = true;
+    } else if (arg === "--audit") {
+      options.audit = true;
+    } else if (arg === "--pull-back") {
+      options.pullBack = true;
+    } else if (arg === "--force-overwrite") {
+      options.forceOverwrite = arg === "--force-overwrite";
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
+  }
+
+  const modeCount = [options.audit, options.pullBack, options.forceOverwrite].filter(Boolean).length;
+  if (modeCount > 1) {
+    throw new Error("Use only one of --audit, --pull-back, or --force-overwrite.");
   }
 
   return options;
@@ -378,6 +415,40 @@ function sha256(filePath: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
+function directoryHash(root: string): string {
+  const hash = crypto.createHash("sha256");
+  for (const entry of listRelativeEntries(root)) {
+    hash.update(entry.relative);
+    hash.update("\0");
+    hash.update(entry.type);
+    hash.update("\0");
+    if (entry.type === "file") {
+      hash.update(sha256(path.join(root, entry.relative)));
+    } else {
+      hash.update(entry.target);
+    }
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+function artifactHash(target: string): string {
+  if (!pathExists(target)) {
+    return "missing";
+  }
+  const stat = fs.lstatSync(target);
+  if (stat.isFile()) {
+    return sha256(target);
+  }
+  if (stat.isDirectory()) {
+    return directoryHash(target);
+  }
+  if (stat.isSymbolicLink()) {
+    return `symlink:${fs.readlinkSync(target)}`;
+  }
+  return `unsupported:${stat.mode}`;
+}
+
 function isSameFile(source: string, destination: string): boolean {
   if (!fs.existsSync(destination) || !fs.statSync(destination).isFile()) {
     return false;
@@ -410,6 +481,215 @@ function isSameDirectory(source: string, destination: string): boolean {
     }
   }
   return true;
+}
+
+function collectDrift(items: Array<{ destination: string; label: string; relative: string; source: string; type: "file" | "directory" }>): DriftEntry[] {
+  const drift: DriftEntry[] = [];
+  for (const item of items) {
+    if (!pathExists(item.destination)) {
+      continue;
+    }
+    const same = item.type === "file" ? isSameFile(item.source, item.destination) : isSameDirectory(item.source, item.destination);
+    if (same) {
+      continue;
+    }
+    drift.push({
+      ...item,
+      sourceHash: artifactHash(item.source),
+      destinationHash: artifactHash(item.destination),
+    });
+  }
+  return drift.sort((left, right) => left.relative.localeCompare(right.relative));
+}
+
+function printDriftReport(drift: DriftEntry[]): void {
+  if (drift.length === 0) {
+    console.log("No drift detected.");
+    return;
+  }
+  console.log(`drift detected: ${drift.length} artifact(s)`);
+  for (const entry of drift) {
+    console.log(`- ${entry.relative}: sourceHash=${entry.sourceHash} destinationHash=${entry.destinationHash}`);
+  }
+}
+
+function printDriftRecovery(configDir: string, profile: string, skipAgentsMd: boolean): void {
+  const common = [`--config-dir "${configDir}"`, profile === "all" ? "" : `--profile ${profile}`, skipAgentsMd ? "--skip-agents-md" : ""].filter(Boolean).join(" ");
+  console.log(`Recovery: npm run install:global -- ${common} --pull-back`);
+  console.log(`Recovery: npm run install:global -- ${common} --force-overwrite`);
+}
+
+function slug(value: string): string {
+  const slugged = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slugged.length > 0 ? slugged.slice(0, 56).replace(/-+$/g, "") : "artifact";
+}
+
+function safeFenceContent(filePath: string): string {
+  try {
+    return fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `unreadable: ${message}`;
+  }
+}
+
+function artifactContent(target: string): string {
+  if (!pathExists(target)) {
+    return "missing";
+  }
+  const stat = fs.lstatSync(target);
+  if (stat.isFile()) {
+    return safeFenceContent(target);
+  }
+  if (stat.isDirectory()) {
+    const chunks: string[] = [];
+    for (const entry of listRelativeEntries(target)) {
+      chunks.push(`### ${entry.relative}`);
+      if (entry.type === "file") {
+        chunks.push(safeFenceContent(path.join(target, entry.relative)).trimEnd());
+      } else {
+        chunks.push(`symlink -> ${entry.target}`);
+      }
+    }
+    return chunks.join("\n\n");
+  }
+  if (stat.isSymbolicLink()) {
+    return `symlink -> ${fs.readlinkSync(target)}`;
+  }
+  return "unsupported";
+}
+
+function pullBackTaskTail(changeId: string): string {
+  return `## Retrospective Before Archive
+
+- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes.
+- [ ] Write \`openspec/changes/${changeId}/retro.md\` with evidence, problems, root causes, improvements, follow-up ids, and archive gate decision.
+- [ ] Run \`npm run openspec:retro-followups -- ${changeId}\` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive.
+- [ ] If the helper is unavailable, manually create or update project-local OpenSpec follow-up changes for project-local findings; for reusable \`opencode-dev-kit\` findings, write only when the current repository owns the reusable artifact and current write scope includes it, otherwise record a local handoff and do not write cross-repo without explicit approval.
+- [ ] Confirm archive is allowed only after the retro gate passes or an approved skip reason is recorded in \`retro.md\`.
+`;
+}
+
+function pullBackProposal(changeId: string, drift: DriftEntry): string {
+  return `# Proposal: Install Pull-Back Investigation For ${drift.relative}
+
+## Why
+
+\`install:global --pull-back\` found destination drift for an installed OpenCode artifact.
+
+- Artifact: ${drift.relative}
+- Source Hash: ${drift.sourceHash}
+- Destination Hash: ${drift.destinationHash}
+- Root Cause: unknown
+
+The source repository must decide whether the destination change is a reusable improvement, a local-only customization, or accidental drift before any source change is made.
+
+## What Changes
+
+- Investigate the destination drift and decide whether to open a separate implementation follow-up.
+- Preserve destination and source content for review.
+
+## Destination Content
+
+~~~~text
+${artifactContent(drift.destination).trimEnd()}
+~~~~
+
+## Source Content
+
+~~~~text
+${artifactContent(drift.source).trimEnd()}
+~~~~
+
+## Root Cause
+
+unknown. Investigate before adding or changing any reusable instruction rule.
+
+## Non-Goals
+
+- Do not write cross-repo artifacts unless this repository owns the artifact family.
+- Do not merge, classify severity, or extract prevention rules in this pull-back run.
+
+## Validation
+
+- Define focused validation in \`tasks.md\` before implementation.
+`;
+}
+
+function pullBackTasks(changeId: string, drift: DriftEntry): string {
+  return `# Tasks: Install Pull-Back Investigation For ${drift.relative}
+
+## Investigation
+
+- [ ] Confirm whether the destination change is reusable, project-specific, or accidental.
+- [ ] Investigate and document the root cause before designing any source change.
+- [ ] If reusable, open a separate follow-up change that modifies the source artifact with focused validation.
+- [ ] If local-only, close as \`approved-skip\` with evidence and reason.
+
+## Validation
+
+- [ ] Run the focused validation command for the eventual source change, or record why no source change is needed.
+- [ ] Run \`openspec validate --all\` when this investigation changes OpenSpec artifacts.
+
+${pullBackTaskTail(changeId)}`;
+}
+
+function pullBackSpec(changeId: string, drift: DriftEntry): string {
+  return `# ${changeId} Specification
+
+## ADDED Requirements
+
+### Requirement: Install Drift Investigation Is Routed Before Source Changes
+
+Destination drift for ${drift.relative} SHALL be investigated before any reusable source artifact is changed.
+
+#### Scenario: Unknown root cause is investigated before remediation
+
+- **GIVEN** \`install:global --pull-back\` generated this change with root cause unknown
+- **WHEN** the change is selected for implementation
+- **THEN** the implementer reviews destination content, source content, source hash, destination hash, and ownership
+- **AND** records the discovered root cause before opening or applying any source remediation.
+`;
+}
+
+function findExistingPullBack(changesRoot: string, drift: DriftEntry): string | null {
+  if (!pathExists(changesRoot) || !isDirectoryFollowingSymlink(changesRoot)) {
+    return null;
+  }
+  for (const dir of listDirectories(changesRoot)) {
+    const id = path.basename(dir);
+    if (!id.startsWith("install-pullback-")) {
+      continue;
+    }
+    const proposalPath = path.join(dir, "proposal.md");
+    if (!fs.existsSync(proposalPath)) {
+      continue;
+    }
+    const proposal = fs.readFileSync(proposalPath, "utf8");
+    if (proposal.includes(`- Artifact: ${drift.relative}`) && proposal.includes(`- Source Hash: ${drift.sourceHash}`) && proposal.includes(`- Destination Hash: ${drift.destinationHash}`)) {
+      return id;
+    }
+  }
+  return null;
+}
+
+function createPullBackChanges(repoRoot: string, drift: DriftEntry[], runStamp: string): PullBackChange[] {
+  const changesRoot = path.join(repoRoot, "openspec", "changes");
+  fs.mkdirSync(changesRoot, { recursive: true });
+  const changes: PullBackChange[] = [];
+  for (const entry of drift) {
+    const existing = findExistingPullBack(changesRoot, entry);
+    const id = existing ?? `install-pullback-${runStamp.toLowerCase()}-${slug(entry.relative)}`.slice(0, 96).replace(/-+$/g, "");
+    const changeRoot = path.join(changesRoot, id);
+    if (existing == null) {
+      fs.mkdirSync(path.join(changeRoot, "specs", id), { recursive: true });
+      fs.writeFileSync(path.join(changeRoot, "proposal.md"), pullBackProposal(id, entry), "utf8");
+      fs.writeFileSync(path.join(changeRoot, "tasks.md"), pullBackTasks(id, entry), "utf8");
+      fs.writeFileSync(path.join(changeRoot, "specs", id, "spec.md"), pullBackSpec(id, entry), "utf8");
+    }
+    changes.push({ id, path: changeRoot, status: existing == null ? "created" : "existing", drift: entry });
+  }
+  return changes;
 }
 
 function copyPath(source: string, destination: string): void {
@@ -689,9 +969,73 @@ function run(): void {
     validateAgentsMdMarkers(readExistingAgentsMd(destinationAgentsMd), destinationAgentsMd);
   }
 
+  const drift = collectDrift([
+    ...skillDirs.map((skillDir) => ({
+      destination: path.join(destinationSkillsDir, path.basename(skillDir)),
+      label: `skill ${path.basename(skillDir)}`,
+      relative: `skills/${path.basename(skillDir)}`,
+      source: skillDir,
+      type: "directory" as const,
+    })),
+    ...agentFiles.map((agentFile) => ({
+      destination: path.join(destinationAgentsDir, path.basename(agentFile)),
+      label: `agent ${path.basename(agentFile, ".md")}`,
+      relative: `agents/${path.basename(agentFile)}`,
+      source: agentFile,
+      type: "file" as const,
+    })),
+    ...listFiles(sourcePluginDir, ".ts").map((pluginFile) => ({
+      destination: path.join(destinationPluginDir, path.basename(pluginFile)),
+      label: `plugin ${path.basename(pluginFile, ".ts")}`,
+      relative: `plugin/${path.basename(pluginFile)}`,
+      source: pluginFile,
+      type: "file" as const,
+    })),
+    {
+      destination: path.join(destinationSupportToolsDir, "opencode-project-session-retro-ledger.ts"),
+      label: "support tool opencode-project-session-retro-ledger",
+      relative: "opencode-dev-kit/tools/opencode-project-session-retro-ledger.ts",
+      source: sourceRetroToolEntrypoint,
+      type: "file" as const,
+    },
+    {
+      destination: path.join(destinationSupportToolsDir, "project-session-retro-ledger"),
+      label: "support tool project-session-retro-ledger",
+      relative: "opencode-dev-kit/tools/project-session-retro-ledger",
+      source: sourceRetroToolDir,
+      type: "directory" as const,
+    },
+  ]);
+
   console.log(`OpenCode global config: ${configDir}`);
   console.log(`Install profile: ${options.profile}`);
   console.log(sourceAgentsMd ? `AGENTS.md source: ${sourceAgentsMd}` : "AGENTS.md source: skipped");
+  if (options.audit) {
+    printDriftReport(drift);
+    if (drift.length > 0) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (options.pullBack) {
+    printDriftReport(drift);
+    if (drift.length === 0) {
+      console.log("Pull-back no-op. No files were changed.");
+      return;
+    }
+    for (const change of createPullBackChanges(repoRoot, drift, context.runStamp)) {
+      console.log(`${change.status}: ${change.id} (${change.drift.relative})`);
+    }
+    console.log("Pull-back complete. Destination artifacts were not overwritten.");
+    return;
+  }
+  if (!options.forceOverwrite && drift.length > 0) {
+    printDriftReport(drift);
+    console.log("Default install refuses to overwrite drifted artifacts.");
+    printDriftRecovery(configDir, options.profile, options.skipAgentsMd);
+    process.exitCode = 1;
+    return;
+  }
   console.log(`Installing skills: ${skillDirs.length}`);
   for (const skillDir of skillDirs) {
     installDirectory(skillDir, path.join(destinationSkillsDir, path.basename(skillDir)), `skill ${path.basename(skillDir)}`, context);

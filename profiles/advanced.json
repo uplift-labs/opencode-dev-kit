@@ -15,6 +15,7 @@
     "external-service-simulator-harness",
     "file-review-quest",
     "framed-protocol-implementation",
+    "instruction-feedback-loop",
     "instruction-artifact-tuning",
     "latency-benchmark-pack",
     "legacy-contract-extract",

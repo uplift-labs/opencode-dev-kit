@@ -47,6 +47,7 @@ Use this mode when converting several concrete session-scoped follow-ups from an
 - Add spec deltas, scenarios, or `design.md` only when normative behavior, compatibility, architecture, migration, or acceptance criteria need a durable source of truth.
 - Carry audit/retro/reviewer evidence into the change so later `next-step` and `openspec-apply-change` runs do not depend on memory or loose final-message bullets.
 - For retro-derived changes, carry the likely root cause and recurrence path into the proposal/tasks; if the cause is unknown, make the follow-up an investigation rather than a presumed fix.
+- For prevention feedback, support `instruction-artifact` alongside `project-local` and `opencode-dev-kit` targets; preserve `Prevention Target`, recurrence path, draft rule, and replay evidence in the generated proposal/tasks.
 
 ## Output
 

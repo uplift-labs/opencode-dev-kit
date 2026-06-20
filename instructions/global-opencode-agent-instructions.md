@@ -32,6 +32,14 @@
 - Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
 - Deterministic helpers may surface root-cause signals, evidence chains, and missing data, but they must not infer root cause from fuzzy transcript content or hidden heuristics.
 
+## Self-Improving Instruction Loop
+
+- Route reviewer `Prevention Feedback` through `instruction-feedback-loop` when available; otherwise preserve the block in handoff and choose instant edit, OpenSpec follow-up, or investigation explicitly.
+- Do not instantly edit global `AGENTS.md`, `instructions/`, `templates/`, `new-skill-required`, medium/expensive feedback, unknown root cause, or cross-repo artifacts.
+- Cheap single skill/agent prevention edits require `instruction-artifact-reviewer` before edit, ledger persistence with `instruction:feedback`, and replay of the same evidence after edit.
+- Close prevention entries only after `applied -> replayed -> resolved`; if replay is `still-failing`, reopen and route the applied rule as a new finding.
+- Cost-band classification and draft-rule quality stay in the LLM/reviewer judgment layer, not deterministic helper code.
+
 ## Token Efficiency
 
 - Keep responses compact by default: outcome, changed files, validation, blockers, and only necessary rationale.

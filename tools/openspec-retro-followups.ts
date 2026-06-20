@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { expectedFollowUpId, readRetroArtifact, writeRetroArtifact } from "./openspec-retro-gate.ts";
 import type { RetroArtifact, RetroProblem } from "./openspec-retro-gate.ts";
 
-export type RetroFindingTarget = "project-local" | "opencode-dev-kit" | "none";
+export type RetroFindingTarget = "project-local" | "opencode-dev-kit" | "instruction-artifact" | "none";
 
 export type RetroFinding = RetroProblem;
 
@@ -62,6 +62,16 @@ function proposalText(sourceChangeId: string, finding: RetroFinding): string {
   const action = isUnknownRootCause(finding.rootCause)
     ? `Investigate the unknown root cause before implementing or documenting: ${finding.recommendation}`
     : `Address the root cause by implementing or documenting: ${finding.recommendation}`;
+  const prevention = finding.target === "instruction-artifact"
+    ? `
+## Prevention
+
+- Prevention Target: ${finding.preventionTarget ?? "unknown"}
+- Recurrence Path: ${finding.rootCause}
+- Draft Rule: ${finding.draftRule ?? "unknown"}
+- Replay Evidence Ref: ${finding.replayEvidenceRef ?? "unknown"}
+`
+    : "";
   return `# Proposal: ${finding.problem}
 
 ## Why
@@ -85,6 +95,7 @@ This follow-up was generated from \`${sourceChangeId}\` \`retro.md\` retrospecti
 - Do not expand beyond the retrospective finding without a separate OpenSpec decision.
 - Do not write cross-repo artifacts unless this repository owns the reusable artifact or the user explicitly approves that scope.
 
+${prevention}
 ## Validation
 
 - Define focused validation in \`tasks.md\` before implementation.
@@ -95,6 +106,16 @@ function tasksText(sourceChangeId: string, finding: RetroFinding): string {
   const rootCauseTask = isUnknownRootCause(finding.rootCause)
     ? `Investigate and document the root cause before designing the fix: ${finding.recommendation}`
     : `Confirm the retrospective root cause is still correct or update it before designing the fix: ${finding.rootCause}`;
+  const prevention = finding.target === "instruction-artifact"
+    ? `
+## Prevention Rule
+
+- [ ] Confirm target artifact: ${finding.preventionTarget ?? "unknown"}
+- [ ] Apply draft rule or revise with reason: ${finding.draftRule ?? "unknown"}
+- [ ] run replay gate using: ${finding.replayEvidenceRef ?? "unknown"}
+- [ ] Record replay result before archive.
+`
+    : "";
   return `# Tasks: ${finding.problem}
 
 ## Follow-Up Scope
@@ -110,6 +131,7 @@ function tasksText(sourceChangeId: string, finding: RetroFinding): string {
 - [ ] Run the focused validation command for this change.
 - [ ] Run \`openspec validate --all\`.
 
+${prevention}
 ${taskTail(sourceChangeId)}`;
 }
 
@@ -117,6 +139,20 @@ function specText(changeId: string, sourceChangeId: string, finding: RetroFindin
   const rootCauseRequirement = isUnknownRootCause(finding.rootCause)
     ? "the investigation records the discovered root cause before remediation"
     : `the follow-up preserves root cause: ${finding.rootCause}`;
+  const prevention = finding.target === "instruction-artifact"
+    ? `
+### Requirement: Prevention Rule Surfaces In Instruction Artifact
+
+The follow-up SHALL make the prevention rule observable in the selected instruction artifact or record evidence-backed rejection before archive.
+
+#### Scenario: Prevention rule is observable after follow-up
+
+- **GIVEN** this follow-up targets ${finding.preventionTarget ?? "an instruction artifact"}
+- **WHEN** the follow-up lands
+- **THEN** the instruction artifact includes or intentionally rejects the draft rule: ${finding.draftRule ?? "unknown"}
+- **AND** replay evidence is recorded from: ${finding.replayEvidenceRef ?? "unknown"}.
+`
+    : "";
   return `# ${changeId} Specification
 
 ## ADDED Requirements
@@ -133,6 +169,7 @@ This follow-up SHALL resolve, validate, or explicitly reject the retrospective f
 - **AND** ${rootCauseRequirement}
 - **AND** they either implement the smallest valid slice for: ${finding.recommendation}
 - **OR** record evidence that the finding is no longer current before closing the change.
+${prevention}
 `;
 }
 
@@ -191,6 +228,7 @@ function updatedArtifact(artifact: RetroArtifact, changes: RetroFollowUpChange[]
     outputs: {
       projectFollowUpChanges: unique([...artifact.outputs.projectFollowUpChanges, ...routedChanges.filter((change) => change.target === "project-local").map((change) => change.id)]),
       opencodeDevKitChanges: unique([...artifact.outputs.opencodeDevKitChanges, ...routedChanges.filter((change) => change.target === "opencode-dev-kit").map((change) => change.id)]),
+      instructionArtifactChanges: unique([...(artifact.outputs.instructionArtifactChanges ?? []), ...routedChanges.filter((change) => change.target === "instruction-artifact").map((change) => change.id)]),
       noFindingsReason: null,
     },
   };
@@ -218,9 +256,15 @@ export function createRetroFollowUps(root: string, changeId: string, options: { 
     const spec = specText(id, changeId, finding);
     const taskRootCauseFragment = isUnknownRootCause(finding.rootCause) ? "Investigate and document the root cause" : finding.rootCause;
     const specRootCauseFragment = isUnknownRootCause(finding.rootCause) ? "discovered root cause" : finding.rootCause;
-    const proposalFragments = [finding.problem, finding.evidence, finding.impact, finding.rootCause, finding.recommendation];
-    const taskFragments = [taskRootCauseFragment, finding.recommendation];
-    const specFragments = ["## ADDED Requirements", "#### Scenario:", specRootCauseFragment, finding.recommendation];
+    const proposalFragments = finding.target === "instruction-artifact"
+      ? [finding.problem, finding.evidence, finding.impact, finding.rootCause, finding.recommendation, "## Prevention", finding.preventionTarget ?? "unknown", finding.draftRule ?? "unknown"]
+      : [finding.problem, finding.evidence, finding.impact, finding.rootCause, finding.recommendation];
+    const taskFragments = finding.target === "instruction-artifact"
+      ? [taskRootCauseFragment, finding.recommendation, "## Prevention Rule", finding.replayEvidenceRef ?? "unknown"]
+      : [taskRootCauseFragment, finding.recommendation];
+    const specFragments = finding.target === "instruction-artifact"
+      ? ["## ADDED Requirements", "#### Scenario:", specRootCauseFragment, finding.recommendation, "Requirement: Prevention Rule Surfaces In Instruction Artifact"]
+      : ["## ADDED Requirements", "#### Scenario:", specRootCauseFragment, finding.recommendation];
     const hasPartialExistingFile = existingFileMissingFragments(proposalPath, proposalFragments) || existingFileMissingFragments(tasksPath, taskFragments) || existingFileMissingFragments(specPath, specFragments);
     if (hasPartialExistingFile) {
       return {

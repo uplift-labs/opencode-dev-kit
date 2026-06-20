@@ -25,9 +25,12 @@ export type RetroProblem = {
   rootCause: string;
   recommendation: string;
   confidence: "low" | "medium" | "high";
-  target: "project-local" | "opencode-dev-kit" | "none";
+  target: "project-local" | "opencode-dev-kit" | "instruction-artifact" | "none";
   followUpChangeId: string | null;
   noFollowUpReason: string | null;
+  preventionTarget: string | null;
+  draftRule: string | null;
+  replayEvidenceRef: string | null;
 };
 
 export type RetroArtifact = {
@@ -37,6 +40,7 @@ export type RetroArtifact = {
   outputs: {
     projectFollowUpChanges: string[];
     opencodeDevKitChanges: string[];
+    instructionArtifactChanges: string[];
     noFindingsReason: string | null;
   };
   archiveGate: {
@@ -56,6 +60,9 @@ type ProblemRow = {
   target: string;
   followUpChangeId: string | null;
   noFollowUpReason: string | null;
+  preventionTarget: string | null;
+  draftRule: string | null;
+  replayEvidenceRef: string | null;
 };
 
 type CliOptions = {
@@ -66,7 +73,7 @@ type CliOptions = {
 
 const decisionValues = new Set(["passed", "blocked", "approved-skip"]);
 const confidenceValues = new Set(["low", "medium", "high"]);
-const findingTargets = new Set(["project-local", "opencode-dev-kit", "none"]);
+const findingTargets = new Set(["project-local", "opencode-dev-kit", "instruction-artifact", "none"]);
 const emptyValues = new Set(["", "none", "n/a", "na", "unknown", "unavailable", "-"]);
 const unknownRootCauseValues = new Set(["unknown"]);
 
@@ -207,7 +214,7 @@ function parseProblemRows(problemSection: string | null): { rows: ProblemRow[]; 
     .filter((line) => !/^\|\s*:?-+\s*\|/.test(line) && !/^\|\s*Problem\s*\|/i.test(line))
     .flatMap((line): ProblemRow[] => {
       const cells = splitMarkdownRow(line);
-      if (cells.length !== 9) {
+      if (cells.length !== 9 && cells.length !== 12) {
         malformedRows++;
         return [];
       }
@@ -221,6 +228,9 @@ function parseProblemRows(problemSection: string | null): { rows: ProblemRow[]; 
         target: cells[6].trim(),
         followUpChangeId: markdownIdCell(cells[7]),
         noFollowUpReason: markdownTextCell(cells[8]),
+        preventionTarget: cells.length === 12 ? markdownTextCell(cells[9]) : null,
+        draftRule: cells.length === 12 ? markdownTextCell(cells[10]) : null,
+        replayEvidenceRef: cells.length === 12 ? markdownTextCell(cells[11]) : null,
       }];
     });
   return { rows, malformedRows };
@@ -267,7 +277,7 @@ function fileIncludesAll(filePath: string, values: string[]): boolean {
   return text != null && values.every((value) => text.includes(value));
 }
 
-function validateFollowUpChange(root: string, changeId: string, finding: Pick<RetroProblem | ProblemRow, "problem" | "evidence" | "impact" | "rootCause" | "recommendation">): string[] {
+function validateFollowUpChange(root: string, changeId: string, finding: Pick<RetroProblem | ProblemRow, "problem" | "evidence" | "impact" | "rootCause" | "recommendation" | "target" | "preventionTarget" | "draftRule" | "replayEvidenceRef">): string[] {
   if (!safeChangeId(changeId)) {
     return [`${changeId} is not a safe follow-up change id.`];
   }
@@ -291,6 +301,20 @@ function validateFollowUpChange(root: string, changeId: string, finding: Pick<Re
   if (!fileIncludesAll(specPath, ["## ADDED Requirements", "#### Scenario:", specRootCauseFragment, finding.recommendation])) {
     errors.push(`${changeId} spec delta must preserve the retrospective root cause.`);
   }
+  if (finding.target === "instruction-artifact") {
+    const preventionTarget = finding.preventionTarget ?? "";
+    const draftRule = finding.draftRule ?? "";
+    const replayEvidenceRef = finding.replayEvidenceRef ?? "";
+    if (!fileIncludesAll(proposalPath, ["## Prevention", preventionTarget, draftRule])) {
+      errors.push(`${changeId} proposal.md must preserve the prevention target and draft rule.`);
+    }
+    if (!fileIncludesAll(tasksPath, ["## Prevention Rule", replayEvidenceRef])) {
+      errors.push(`${changeId} tasks.md must preserve the replay evidence reference.`);
+    }
+    if (!fileIncludesAll(specPath, ["Requirement: Prevention Rule Surfaces In Instruction Artifact"])) {
+      errors.push(`${changeId} spec delta must require the prevention rule to surface in the instruction artifact.`);
+    }
+  }
   return errors;
 }
 
@@ -299,9 +323,10 @@ function defaultRoot(): string {
 }
 
 function rowsToProblems(changeId: string, rows: ProblemRow[], outputs: string | null, errors: string[]): RetroProblem[] {
-  const actionableRows = rows.filter((row) => row.target === "project-local" || row.target === "opencode-dev-kit");
+  const actionableRows = rows.filter((row) => row.target === "project-local" || row.target === "opencode-dev-kit" || row.target === "instruction-artifact");
   const projectIds = outputChangeIds(outputs, "Project follow-up changes");
   const devKitIds = outputChangeIds(outputs, "opencode-dev-kit");
+  const instructionIds = outputChangeIds(outputs, "Instruction-artifact follow-up changes");
   return rows.map((row) => {
     const actionableIndex = actionableRows.indexOf(row);
     const target = findingTargets.has(row.target) ? row.target as RetroProblem["target"] : "none";
@@ -311,7 +336,7 @@ function rowsToProblems(changeId: string, rows: ProblemRow[], outputs: string | 
     if (!confidenceValues.has(row.confidence)) {
       errors.push(`Retrospective finding '${row.problem}' confidence must be one of low, medium, high.`);
     }
-    const outputIds = target === "project-local" ? projectIds : target === "opencode-dev-kit" ? devKitIds : [];
+      const outputIds = target === "project-local" ? projectIds : target === "opencode-dev-kit" ? devKitIds : target === "instruction-artifact" ? instructionIds : [];
     const expectedId = actionableIndex >= 0 ? expectedFollowUpId(changeId, row, actionableIndex) : null;
     const outputFollowUpId = expectedId != null && outputIds.includes(expectedId) ? expectedId : null;
     return {
@@ -324,6 +349,9 @@ function rowsToProblems(changeId: string, rows: ProblemRow[], outputs: string | 
       target,
       followUpChangeId: target === "none" ? null : row.followUpChangeId ?? outputFollowUpId,
       noFollowUpReason: row.noFollowUpReason,
+      preventionTarget: row.preventionTarget,
+      draftRule: row.draftRule,
+      replayEvidenceRef: row.replayEvidenceRef,
     };
   });
 }
@@ -361,7 +389,7 @@ function parseRetroMarkdown(changeId: string, retrospective: string): { artifact
   }
   const parsedProblems = parseProblemRows(problems);
   if (parsedProblems.malformedRows > 0) {
-    errors.push("Retrospective problem rows must have exactly nine columns: Problem, Evidence, Impact, Root Cause, Recommendation, Confidence, Target, Follow-up Change, No Follow-up Reason.");
+    errors.push("Retrospective problem rows must have exactly nine columns or twelve columns: Problem, Evidence, Impact, Root Cause, Recommendation, Confidence, Target, Follow-up Change, No Follow-up Reason, and optional Prevention Target, Draft Rule, Replay Evidence Ref.");
   }
   const decision = archiveDecision != null ? parseDecision(archiveDecision) : undefined;
   if (!decisionValues.has(decision ?? "")) {
@@ -374,6 +402,7 @@ function parseRetroMarkdown(changeId: string, retrospective: string): { artifact
     outputs: {
       projectFollowUpChanges: outputChangeIds(outputs, "Project follow-up changes"),
       opencodeDevKitChanges: outputChangeIds(outputs, "opencode-dev-kit"),
+      instructionArtifactChanges: outputChangeIds(outputs, "Instruction-artifact follow-up changes"),
       noFindingsReason: outputTextValue(outputs, "No findings reason"),
     },
     archiveGate: {
@@ -406,6 +435,7 @@ function validateTasks(root: string, changeId: string, errors: string[]): void {
 function validateArtifactSemantics(root: string, artifact: RetroArtifact, errors: string[]): void {
   const projectIds = new Set(artifact.outputs.projectFollowUpChanges);
   const devKitIds = new Set(artifact.outputs.opencodeDevKitChanges);
+  const instructionIds = new Set(artifact.outputs.instructionArtifactChanges ?? []);
   if (artifact.problems.length === 0 && !isMeaningful(artifact.outputs.noFindingsReason)) {
     errors.push("No-findings retrospectives must record Outputs No findings reason with evidence reviewed.");
   }
@@ -425,6 +455,11 @@ function validateArtifactSemantics(root: string, artifact: RetroArtifact, errors
       }
       continue;
     }
+    if (problem.target === "instruction-artifact") {
+      if (![problem.preventionTarget, problem.draftRule, problem.replayEvidenceRef].every(isMeaningful)) {
+        errors.push(`Retrospective finding '${problem.problem}' target instruction-artifact must include Prevention Target, Draft Rule, and Replay Evidence Ref.`);
+      }
+    }
     if (!isMeaningful(problem.followUpChangeId) && !isMeaningful(problem.noFollowUpReason)) {
       errors.push(`Retrospective finding '${problem.problem}' must include followUpChangeId or noFollowUpReason.`);
       continue;
@@ -433,7 +468,7 @@ function validateArtifactSemantics(root: string, artifact: RetroArtifact, errors
       continue;
     }
     const followUpId = problem.followUpChangeId as string;
-    const outputIds = problem.target === "project-local" ? projectIds : devKitIds;
+    const outputIds = problem.target === "project-local" ? projectIds : problem.target === "opencode-dev-kit" ? devKitIds : instructionIds;
     if (!outputIds.has(followUpId)) {
       errors.push(`Retrospective finding '${problem.problem}' followUpChangeId must be listed in Outputs for ${problem.target}.`);
     }
@@ -481,12 +516,19 @@ function markdownId(value: string | null): string {
 }
 
 function renderProblemRows(problems: RetroProblem[]): string {
-  const lines = [
-    "| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target | Follow-up Change | No Follow-up Reason |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-  ];
+  const hasPreventionColumns = problems.some((problem) => problem.target === "instruction-artifact" || isMeaningful(problem.preventionTarget) || isMeaningful(problem.draftRule) || isMeaningful(problem.replayEvidenceRef));
+  const lines = hasPreventionColumns
+    ? [
+      "| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target | Follow-up Change | No Follow-up Reason | Prevention Target | Draft Rule | Replay Evidence Ref |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    : [
+      "| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target | Follow-up Change | No Follow-up Reason |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ];
   for (const problem of problems) {
-    lines.push(`| ${markdownCell(problem.problem)} | ${markdownCell(problem.evidence)} | ${markdownCell(problem.impact)} | ${markdownCell(problem.rootCause)} | ${markdownCell(problem.recommendation)} | ${markdownCell(problem.confidence)} | ${markdownCell(problem.target)} | ${markdownId(problem.followUpChangeId)} | ${markdownCell(problem.noFollowUpReason)} |`);
+    const base = `| ${markdownCell(problem.problem)} | ${markdownCell(problem.evidence)} | ${markdownCell(problem.impact)} | ${markdownCell(problem.rootCause)} | ${markdownCell(problem.recommendation)} | ${markdownCell(problem.confidence)} | ${markdownCell(problem.target)} | ${markdownId(problem.followUpChangeId)} | ${markdownCell(problem.noFollowUpReason)} |`;
+    lines.push(hasPreventionColumns ? `${base} ${markdownCell(problem.preventionTarget)} | ${markdownCell(problem.draftRule)} | ${markdownCell(problem.replayEvidenceRef)} |` : base);
   }
   return lines.join("\n");
 }
@@ -499,6 +541,7 @@ function renderOutputs(artifact: RetroArtifact): string {
   return [
     `- Project follow-up changes: ${renderOutputIds(artifact.outputs.projectFollowUpChanges)}.`,
     `- \`opencode-dev-kit\` proposals/changes: ${renderOutputIds(artifact.outputs.opencodeDevKitChanges)}.`,
+    `- Instruction-artifact follow-up changes: ${renderOutputIds(artifact.outputs.instructionArtifactChanges ?? [])}.`,
     `- No findings reason: ${isMeaningful(artifact.outputs.noFindingsReason) ? artifact.outputs.noFindingsReason : "n/a"}.`,
   ].join("\n");
 }

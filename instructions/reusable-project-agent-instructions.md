@@ -10,7 +10,7 @@ Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> S
 - Start broad work with a deterministic project inventory, targeted search, or repository-native command before reading large file sets.
 - For behavior-changing work, prove current behavior and add/update the smallest useful failing, acceptance, or characterization test before implementation unless infeasible.
 - Run focused validation first, then broaden validation when boundaries, APIs, data, deployment, or compatibility are affected.
-- Use read-only reviewer gates only when the risk justifies them, and report skipped gates with the reason.
+- Use read-only reviewer gates only when the risk justifies them, and report skipped gates with the reason. Reviewer feedback-ledger writes under `docs/feedbacks/**` are the only default write exception.
 
 ## Sources Of Truth
 
@@ -45,6 +45,9 @@ Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> S
 ## Process Control
 
 - Use a direct single-agent path for clear small edits and questions.
+- Use `implementation-worker` for bounded edit-mode implementation slices when the work has exact non-overlapping write scope, clear acceptance criteria, and a focused validation gate.
+- When delegating to `implementation-worker`, pass `Mission`, `Read scope`, `Write scope`, `Forbidden`, `Verification`, and acceptance criteria.
+- Keep implementation serial when `implementation-worker` is unavailable, scope is unclear, write targets overlap, or integration would cost more than doing the work directly.
 - Use prompt-only orchestration only for broad work with independent bounded tracks where coordinated fan-out, fan-in, validation gates, or isolation is worth the overhead.
 - Keep task tracking, integration, validation, reviewer gates, cleanup, and final synthesis in the main session.
 - Before final handoff for material/complex sessions, run `session-delivery-reviewer` with bundle: goal/constraints, transcript/summary plus compaction state, files/diffstat, validation, reviewer fixes, risks; skip only for trivial/bounded work or unavailable inputs, and report why.
@@ -53,7 +56,14 @@ Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> S
 
 - Findings require evidence, impact, recommendation, and confidence.
 - Missing evidence for critical behavior is a finding, blocker, or accepted risk.
-- Reviewer agents should be leaf validators: read-only, no edits, no commits, no pushes, no nested agents, no user questions.
+- Reviewer agents should be leaf validators: read-only except feedback-ledger appends under `docs/feedbacks/**`, no source/config/instruction edits, no commits, no pushes, no nested agents, no user questions.
+
+## Feedback Ledger
+
+- When current-session workflow friction, instruction conflict, tooling pain, missing automation, confusing handoff, validation noise, or reusable improvement opportunity appears, use the `complain` skill and append a structured entry to `docs/feedbacks/<agent-or-skill-name>.md`.
+- Do not wait for proof that the issue is recurring. If recurrence is unknown, write `Recurrence: unknown`.
+- OpenCode permissions enforce the feedback path boundary; `complain` is the required model contract for entry shape and privacy checks.
+- Keep entries privacy-safe and focused on workflow/tooling/instructions, not personal blame. If writing is blocked, return a `Feedback Candidate`.
 
 ## Deterministic Helper Automation
 
@@ -62,14 +72,6 @@ Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> S
 - Helper code must have no hidden heuristics: do not encode fuzzy scoring, probabilistic classification, model-like summarization, or unstated inference as evidence.
 - If deterministic helper code cannot answer something from its inputs, report `unknown`, `unreadable`, `unsupported`, or `blocked` instead of guessing.
 - Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
-
-## Just-In-Time Process Improvement
-
-- When concrete workflow friction appears during a session, delegate at most one atomic improvement to `just-in-time-process-improvement-worker` when available.
-- Let the worker claim the cap with `npm run instruction:feedback -- --claim-session-improvement --session <ref> --source-ref <ref> --summary <text>`; pass it the session ref and evidence. If the worker is unavailable and the main session handles the improvement directly, count that edit as the cap for the session.
-- Keep the improvement small: one skill, one agent, one instruction artifact, one focused validator/test pair, or one small docs correction tied to the friction evidence.
-- Do not create OpenSpec changes, retro files, broad backlogs, or speculative cleanup for JIT process improvements.
-- For instruction-artifact edits, run `instruction-artifact-reviewer` before final handoff; for helper/tooling behavior changes, add or update the smallest TDD/test-first gate.
 
 ## Git And Remote State
 

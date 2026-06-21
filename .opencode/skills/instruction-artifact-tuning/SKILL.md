@@ -43,17 +43,6 @@ For broad audits that include multiple skills/agents, global config, installed c
 - Remove obsolete instructions instead of adding override paragraphs.
 - If review or tuning exposes several concrete artifact follow-ups outside the approved scope, return grouped continuation items rather than expanding the current edit silently or leaving a loose backlog.
 
-## Just-In-Time Improvement Quick Path
-
-Use this quick path only when `just-in-time-process-improvement-worker` or the main session routes a concrete friction signal to one atomic instruction-artifact edit.
-
-- The worker normally owns the session cap claim via `npm run instruction:feedback -- --claim-session-improvement --session <ref> --source-ref <ref> --summary <text>` before editing. If this skill is used directly, claim once before editing and stop when the command returns `already-claimed`.
-- Keep the edit to one skill, one agent, one instruction artifact, one focused validator/test pair, or one small docs correction. Do not create OpenSpec changes, retro files, broad backlogs, or speculative cleanup.
-- Require a persisted prevention entry from `npm run instruction:feedback -- --add ...` only when routing reviewer `Prevention Feedback`; keep the entry id in handoff evidence.
-- Run `instruction-artifact-reviewer` before the edit with the target artifact, recurrence path, draft rule, and replay evidence; block on conflict, cohesion, scope, or replay-signal findings.
-- Apply the smallest rule edit that addresses the recurrence path; remove or merge stale overlapping guidance instead of adding a broad override.
-- Run the replay gate by sending the same replay evidence to the same reviewer after the edit. Close the feedback entry only after `applied -> replayed -> resolved`; if replay is `still-failing`, reopen and create a new entry against the applied rule.
-
 ## Output
 
 For review-only work, return:

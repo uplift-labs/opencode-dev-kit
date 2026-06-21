@@ -118,7 +118,7 @@ function buildReport(project: string, showProject: boolean): DoctorReport {
 
   addCheck(checks, "node version", nodeMajor() >= 24 ? "pass" : "blocked", `Node ${process.versions.node}; opencode-dev-kit tooling requires Node >=24.`);
   addCheck(checks, "universal loop source", fs.existsSync(path.join(root, "instructions", "universal-development-loop.md")) ? "pass" : "blocked", "Kit has the Universal Development Loop instruction artifact.");
-  addCheck(checks, "profile manifests", fs.existsSync(path.join(root, "profiles", "standard.json")) ? "pass" : "blocked", "Kit has optional profile manifests for restricted installs.");
+  addCheck(checks, "profile manifest", fs.existsSync(path.join(root, "profiles", "all.json")) ? "pass" : "blocked", "Kit has the all-artifacts install profile.");
 
   const agentsPath = path.join(project, "AGENTS.md");
   addCheck(checks, "project AGENTS.md", fileContains(agentsPath, "Universal Development Loop") ? "pass" : "warn", "Project AGENTS.md should reference the Universal Development Loop.");
@@ -128,6 +128,9 @@ function buildReport(project: string, showProject: boolean): DoctorReport {
 
   const validationPath = path.join(project, "opencode-dev-kit", "validation.md");
   addCheck(checks, "project validation doc", fs.existsSync(validationPath) ? "pass" : "warn", "Project should have opencode-dev-kit/validation.md or equivalent command documentation.");
+
+  const feedbackLedgerPath = path.join(project, "docs", "feedbacks", "README.md");
+  addCheck(checks, "project feedback ledger", fs.existsSync(feedbackLedgerPath) ? "pass" : "warn", "Project should have docs/feedbacks/README.md so complain feedback can be appended safely.");
 
   const opencodeConfig = path.join(project, "opencode.json");
   addCheck(checks, "project opencode config", fs.existsSync(opencodeConfig) ? "pass" : "warn", "Project opencode.json is optional but recommended for explicit instructions/config.");

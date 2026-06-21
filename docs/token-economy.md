@@ -11,7 +11,7 @@ Token economy is part of quality: lower context cost leaves more budget for reas
 - On native Windows, use `rtk <command>` explicitly for shell-heavy read-only commands; hook auto-rewrite is not supported there.
 - Use Headroom MCP tools only on demand for large logs, search results, JSON, or tool outputs where compression preserves enough evidence; retrieve originals before exact code or safety-critical decisions.
 - Use `tools/headroom-mcp-wrapper.ts` for OpenCode Headroom MCP integration so `prompts/list` returns the `headroom_usage_policy` prompt instead of a startup error.
-- Keep default installs small; put heavyweight/domain skills in optional profiles.
+- Install the full kit globally, but load heavyweight/domain skills only when they reduce total work.
 - Run one relevant reviewer gate by risk, not all reviewers.
 - Keep handoffs compact: outcome, changed files, evidence, validation, residual risks.
 - Convert repeated counting, drift checks, and report assembly into deterministic helpers.

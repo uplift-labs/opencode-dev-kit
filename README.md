@@ -4,7 +4,7 @@ Installable OpenCode development kit for reusable AI-assisted engineering workfl
 
 ## What This Is
 
-`opencode-dev-kit` packages reusable OpenCode skills, read-only reviewer agents, bounded worker agents, project templates, instruction templates, and deterministic helper tools. Its purpose is to make work in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
+`opencode-dev-kit` packages reusable OpenCode skills, read-only reviewer agents with a scoped feedback-ledger write exception, bounded worker agents, project templates, instruction templates, and deterministic helper tools. Its purpose is to make work in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
 
 The kit optimizes one process: gather evidence, prove current state, choose the smallest useful slice, work test-first when behavior changes, validate, run proportional reviewer gates, and hand off with residual risks.
 
@@ -21,16 +21,17 @@ Technology adapters may change commands and constraints, but not the loop.
 ## Contents
 
 - `.opencode/skills/`: reusable OpenCode skills.
-- `.opencode/agents/`: reusable read-only reviewers, bounded read-only workers, and the explicit write-capable JIT process-improvement worker.
+- `.opencode/agents/`: reusable read-only reviewers, bounded read-only workers, and a bounded implementation worker. Reviewer/worker feedback writes are scoped to `docs/feedbacks/**` through `complain`.
+- `docs/feedbacks/`: shared feedback ledger for agent and skill complaints, suggestions, and workflow-friction notes.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
 - `templates/`: project bootstrap and CI templates for applying the Universal Development Loop to another repository.
-- `profiles/`: install manifests that choose artifacts without creating separate workflows.
-- `tools/`: TypeScript validation, install, project bootstrap, doctor, inventory, code-quality, `instruction:feedback`, and OpenCode session-retro ledger tooling for this kit.
+- `profiles/`: single `all` install manifest covering every reusable skill and agent in the repository.
+- `tools/`: TypeScript validation, install, project bootstrap, doctor, inventory, code-quality, `instruction:feedback`, OpenSpec gates, and session-delivery support tooling for this kit.
 
 ## Prerequisites
 
 - Node `>=24` is required because repository tooling runs TypeScript entrypoints directly.
-- `npm test`, `npm run retro:inventory`, `npm run retro:analyze`, and `npm run retro:project-ledger` use Node's `node:sqlite`; Node may print an `ExperimentalWarning` while the API remains experimental.
+- `npm test` uses Node's `node:sqlite` for session-delivery plugin fixtures; Node may print an `ExperimentalWarning` while the API remains experimental.
 
 ## Install
 
@@ -42,28 +43,29 @@ Install all repository skills, all repository agents, and a reusable global `AGE
 npm run install:global
 ```
 
-By default this installs into `~/.config/opencode`, syncs every repository skill to `skills/`, syncs every repository agent to `agents/`, and adds `instructions/global-opencode-agent-instructions.md` as an idempotent marked block in `~/.config/opencode/AGENTS.md` without deleting existing user instructions. Full sync prunes destination skill directories and agent `.md` files that are not present in the selected install set.
+By default this installs into `~/.config/opencode`, syncs every repository skill to `skills/`, syncs every repository agent to `agents/`, and creates `~/.config/opencode/AGENTS.md` from `instructions/global-opencode-agent-instructions.md` only when doing so is lossless. Destination-only skill directories and agent `.md` files are kept unless `--prune` is explicit.
 
-Default install now detects source-vs-destination drift before writing. If an installed skill, agent, plugin, or support tool differs from source, the installer refuses to overwrite it and prints recovery commands. This protects local prevention-rule improvements from being silently discarded.
+Default install detects source-vs-destination drift before writing. If an installed skill, agent, `AGENTS.md`, plugin, or support tool differs from source, the installer refuses to overwrite it and prints smart-merge escalation plus recovery commands. This protects local prevention-rule improvements from being silently discarded.
 
 Useful options:
 
 - `--dry-run` or `--what-if`: preview changes without writing files.
 - `--config-dir <path>`: install into a custom OpenCode config directory.
-- `--profile <standard|strict|advanced>`: restrict the installed artifact set without changing the Universal Development Loop.
+- `--profile all`: install the full repository artifact set; this is the default.
 - `--agents-md-source <path>`: install a custom source file into the global `AGENTS.md` block.
-- `--skip-agents-md`: install only skills and agents.
+- `--skip-agents-md`: skip updating the managed `AGENTS.md` block; skills, agents, plugin, and support files still install.
 - `--audit`: report drift with source and destination hashes without writing, removing, or backing up.
 - `--pull-back`: generate one investigation OpenSpec change per drifted artifact under `openspec/changes/install-pullback-<run-stamp>-<slug>/` without overwriting destination files.
 - `--force-overwrite`: opt into the legacy overwrite-with-backup behavior when you intentionally want to discard local destination changes.
-- `--no-prune`: keep destination skills/agents not present in this repository.
-- `--no-backup`: replace changed or pruned artifacts without creating backup copies.
+- `--prune`: delete destination skills/agents not present in this repository.
+- `--no-prune`: keep destination skills/agents not present in this repository; this is the default and remains as a compatibility no-op.
+- `--no-backup`: skip backups for already-authorized `--force-overwrite` or `--prune` writes; it does not bypass default drift refusal.
 
 Use `--agents-md-source AGENTS.md` only if you intentionally want this repository's local maintenance rules in the global `AGENTS.md` block.
 
 Restart OpenCode after installing; config-time files are loaded at startup.
 
-Migration note: CI or local scripts that depended on silent overwrite must add `--force-overwrite`, or migrate to `--audit`/`--pull-back` and review generated investigation changes. Clean installs and identical destinations are unaffected.
+Migration note: CI or local scripts that depended on silent overwrite must add `--force-overwrite`, and scripts that depended on destination cleanup must add `--prune`. Safer automation should migrate to `--audit`/`--pull-back` and review generated investigation changes. Clean installs and identical destinations are unaffected.
 
 Keep project-specific skills out of global discovery unless their descriptions explicitly scope them to that project. Global skills are visible in unrelated repositories through the skill catalog, so broad or local-product triggers add avoidable routing noise.
 
@@ -81,7 +83,7 @@ Write the bootstrap files when the preview is correct:
 npm run init:project -- --target <project-path> --mode write
 ```
 
-The bootstrap writes a project `AGENTS.md`, optional `opencode.json`, and `opencode-dev-kit/adapter.json` plus `opencode-dev-kit/validation.md`. The adapter records technology-specific commands; it does not define a separate workflow.
+The bootstrap writes a project `AGENTS.md`, optional `opencode.json`, `docs/feedbacks/README.md`, and `opencode-dev-kit/adapter.json` plus `opencode-dev-kit/validation.md`. The adapter records technology-specific commands; it does not define a separate workflow.
 
 Check readiness after bootstrapping:
 
@@ -102,7 +104,8 @@ npm run project:inventory -- --root <project-path> --format markdown
 - On native Windows, use `rtk <command>` explicitly for shell-heavy read-only commands; do not rely on hook auto-rewrite.
 - Use Headroom MCP tools only on demand for large logs, search results, JSON, or tool outputs; retrieve originals before trusting exact code, errors, or safety-critical details.
 - Route Headroom MCP through `tools/headroom-mcp-wrapper.ts` when OpenCode expects MCP prompts; the wrapper adds a small `headroom_usage_policy` prompt and proxies Headroom tools unchanged.
-- Keep heavyweight skills in optional profiles and load them only when they reduce total work.
+- Install the full kit by default, but load heavyweight skills/subagents only when they reduce total work.
+- Delegate implementation only when the slice has exact non-overlapping write scope, clear acceptance criteria, and a focused validation gate; use `implementation-worker` for those slices.
 - Run focused validation first; run broad validation when the change crosses boundaries.
 - Use one relevant reviewer gate by risk instead of launching every reviewer.
 - Convert repeated manual counting, drift checks, or report assembly into deterministic helpers.
@@ -139,7 +142,11 @@ OpenCode agents are loaded from project or global agent folders. Copy selected f
 - Project: `.opencode/agents/<name>.md`
 - Global: `~/.config/opencode/agents/<name>.md`
 
-Copy only the agents that are useful for the target project. They are read-only leaf validators or bounded read-only workers by default, except `just-in-time-process-improvement-worker`, which is intentionally write-capable and validation-bounded.
+Copy only the agents that are useful for the target project. They are read-only leaf validators or bounded read-only workers by default with a scoped `docs/feedbacks/**` write exception through `complain`; `implementation-worker` is intentionally broader write-capable and validation-bounded.
+
+OpenCode permissions enforce the `docs/feedbacks/**` path boundary; `complain` is the required model contract for entry shape and privacy checks. Use a semantic plugin/tool later if hard append-only or skill-mediated enforcement is required.
+
+Global install is enough for fresh projects: when `docs/feedbacks` is missing, agents use the scoped edit/add-file path to create `docs/feedbacks/<agent-or-skill-name>.md` on first feedback write. Project bootstrap only pre-creates a README for discoverability.
 
 ### Manual Commands
 
@@ -184,13 +191,7 @@ npm run instruction:feedback -- --replay-pending
 
 The helper persists entries, detects exact-match duplicates, enforces replay status transitions, reports stale open/applied entries, and checks one-in-one-out evidence for broad instruction rules. It does not classify prevention cost or draft rule quality.
 
-For one just-in-time process improvement per session, delegate the atomic edit to `just-in-time-process-improvement-worker` with a session ref and friction evidence. The worker owns the cap claim before edits:
-
-```sh
-npm run instruction:feedback -- --claim-session-improvement --session <session-ref> --source-ref <evidence-ref> --summary <summary>
-```
-
-If the worker reports `already-claimed`, keep later process ideas as continuation items. JIT improvements must stay small: one skill, one agent, one instruction artifact, one focused validator/test pair, or one small docs correction. Do not create OpenSpec changes, retro files, broad backlogs, or speculative cleanup for JIT improvements.
+Use `complain` for lightweight feedback that should be captured. Entries append to `docs/feedbacks/<agent-or-skill-name>.md` and can later be grouped into OpenSpec follow-up analysis when patterns accumulate.
 
 Validate all OpenSpec changes with the first-class package gate:
 
@@ -237,114 +238,25 @@ git config core.hooksPath .githooks
 
 For broad instruction-artifact audits, use `instructions/instruction-artifact-audit-runbook.md` to prove repo source, installed state, runtime policy, context-cost metrics, permission semantics, reviewer gates, and non-repo changes. Capture before/after metrics such as global rules line count, top heavy skill line counts, installed-copy drift, validator test count, and reviewer findings.
 
-## Session Retro Inventory And Analysis
-
-Before running `all-sessions-retro`, generate a redacted coverage and batching ledger for locally reachable OpenCode session stores:
-
-```sh
-npm run retro:inventory -- --format markdown
-```
-
-For machine-readable fan-out manifests, write JSON only when the output path is approved for generated ledgers:
-
-```sh
-npm run retro:inventory -- --format json --out <ledger-path>
-```
-
-The inventory tool reads OpenCode SQLite stores in read-only mode, classifies Desktop state files without emitting raw prompts, redacts session IDs/project names/paths by default, and suggests stable batches for later evidence review. Use `--db <path>`, `--data-dir <path>`, or `--desktop-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Existing `--out` files are refused unless `--overwrite` is passed explicitly.
-
-After inventory, gather deterministic structured metrics without transcript-content heuristics:
-
-```sh
-npm run retro:analyze -- --format markdown
-```
-
-The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, deterministic tool-error categories, open TODO counts, edit/validation/git-review readiness proxies, event types, and session summary counters. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets.
-
-For current-project retros, initialize a generated working ledger before synthesis:
-
-```sh
-npm run retro:project-ledger -- init --project-root <project-path>
-```
-
-Run from the target repository when this tooling is available there. `init` writes sharded `<project-path>/retro/` by default. If running from this kit repository for another target, pass `--project-root <target-project>` and write `--out <target-project>/retro` unless an approved temp path is being used. Pass `--root <target-project>` on `proposals` and strict `validate` commands. Legacy single-file ledgers remain supported when `--out` or `--input` points to a path ending in `.json`.
-
-Root `retro/` is a temporary, machine-checkable sharded ledger for the chain `sessions -> per-session audit -> observations -> trends -> root causes -> plans -> OpenSpec proposals`. `retro/index.json` holds small top-level metadata; `retro/sessions/<session-ref>.json`, `retro/trends/<trend-id>.json`, `retro/rootCauses/<cause-id>.json`, `retro/plans/<plan-id>.json`, and `retro/openspecProposals/<change-id>.json` hold the same object values that previously lived under those `retro.json` maps.
-
-Key current-project retro rules:
-
-- Full retros must create and keep root `retro/`; inline summaries are only partial inventory.
-- The helper reads OpenCode SQLite stores in read-only mode, filters sessions to the project root, emits redacted session skeletons, and keeps raw ids, titles, prompts, project paths, and transcript text out by default.
-- `analysisProgress` records chronological session order, last analyzed session, and next session so future runs can resume instead of restarting.
-- Use `status --format json` to get counts, next refs, and bounded `nextSessions` batch metadata without opening huge JSON manually.
-- Use `transcript` to extract ordered full transcript envelopes for redacted session refs or raw ids, `delivery-context` or the `session_delivery_context` plugin tool to extract current-session todos/user prompts/question replies for final handoff review, and `patch-sessions` to merge reviewed batch audit JSON back into `retro/` with progress refresh and validation.
-- For large archives, `project-sessions-retro` uses orchestrator-style parallel worker batches: `session-observation-worker` reviews local transcript JSON and returns sanitized patch drafts, while the main session is the only writer to `retro/`.
-- A successful batch is a checkpoint, not a stopping point; continue status/transcript/patch waves until all sessions are complete or a real blocker appears.
-- `transcript` redacts content by default. `--include-content` is explicit local-analysis mode. For worker batches, write JSON under a repo-local ignored scratch directory that `session-observation-worker` can read without `external_directory` permission; use OS temp only for main-session-only analysis or for a worker surface with explicit external-read permission. Delete raw transcript exports created by the run after their patches are applied, or report retained paths in `Privacy Notes`.
-- A completed session must fill `sessions.<sessionRef>.audit` with user goal, constraints, assistant actions, tool failures, validation or skipped reason, edit evidence, user corrections, outcome, lessons, symptom/root-cause notes, confidence, and learning routes before `coverage.status` is set to `complete`.
-- Negative observations must name `mainAgentLearning` and/or `reviewerLearning`; reviewer findings require `mainAgentLearning` so main-agent behavior improves instead of repeating reviewer cycles.
-- Plans use explicit `kind` values: `investigation`, `remediation`, or `preservation`.
-
-Full-retro phase routing:
-
-| Phase | Skill/agent/helper |
-| --- | --- |
-| Scope and source inventory | `project-sessions-retro`, `retro:project-ledger` |
-| Batch decomposition | `orchestrator` |
-| Per-session observation | `session-observation-worker`, optional `qwen-local-worker` first pass |
-| Trend synthesis | `project-sessions-retro` main session |
-| Root-cause analysis | `root-cause-analysis` |
-| Plan design | `deep-task-planning` |
-| OpenSpec follow-up routing | `openspec-propose`, `retro:project-ledger proposals` |
-| Instruction artifact changes | `instruction-artifact-tuning`, `instruction-artifact-reviewer` |
-| Code/test/tooling changes | relevant domain skill, `code-quality-audit`, `code-quality-reviewer`, `test-coverage-reviewer` |
-| Final delivery control | `session-delivery-reviewer` |
-
-Fill audit fields/observations/trends/root causes/plans with human judgment, then refresh progress, validate links, and preview proposal writes:
-
-```sh
-npm run retro:project-ledger -- status --input retro --limit 50 --format json
-npm run retro:project-ledger -- transcript --input retro --session <session-ref> --include-content --format json --out <repo-local-ignored-scratch-transcript.json> --overwrite
-npm run retro:project-ledger -- delivery-context --current --format json
-npm run retro:project-ledger -- patch-sessions --input retro --patch <batch-audit.json>
-npm run retro:project-ledger -- refresh --input retro
-npm run retro:project-ledger -- validate --input retro
-npm run retro:project-ledger -- proposals --input retro --root <project-path> --dry-run
-npm run retro:project-ledger -- split --input retro.json --out retro
-npm run retro:project-ledger -- assemble --input retro --out assembled-retro.json
-```
-
-After write scope is approved, materialize proposals and run the final strict gate:
-
-```sh
-npm run retro:project-ledger -- proposals --input retro --root <project-path>
-npm run retro:project-ledger -- validate --input retro --root <project-path> --require-complete --require-proposals
-```
-
-When root `retro/` or legacy root `retro.json` exists, `npm run prepush:validate` runs the complete ledger gate before push. Push fails if any session is not complete, any completed session lacks required audit fields, observations are not converted to trends, promoted trends lack root-cause analysis, root causes lack detailed plans, or plans lack generated OpenSpec proposals.
-
-Use `--db`, `--data-dir`, and `--only-explicit` for controlled stores. Use `--show-paths` only when home-redacted paths are acceptable. Existing init output files are refused unless `--overwrite` is passed.
-
 ## Routing Map
 
-Routing and reviewer maps assume all/advanced artifacts; restricted profiles use the closest installed core route or install `advanced`/all.
+Routing and reviewer maps assume the default `all` install profile.
 
 - Broad, unclear, high-risk, or process-sensitive delivery -> `adaptive-delivery`; let it choose direct execution, planning, OpenSpec, architecture, orchestration, or reviewer gates.
 - Explicit planning-only work -> `deep-task-planning`; if the request is broad delivery rather than planning-only, start with `adaptive-delivery`.
-- Existing OpenSpec continuation or "what next" work -> `next-step` from the `advanced` profile; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
-- Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved and the advanced profile is available; otherwise return grouped continuation candidates.
+- Existing OpenSpec continuation or "what next" work -> `next-step`; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
+- Several session-scoped follow-ups from an audit, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved; otherwise return grouped continuation candidates.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
-- Chained one-shot loop that batch-merges every open MR/PR on the default branch, refreshes the trunk, then implements the highest-ROI OpenSpec change to archive plus MR while emitting worktree prompts for safe parallel changes -> `merge-then-openspec-roi`; provider is auto-detected from `git remote` with a `<mr-provider>` fallback.
-- Broad independent tracks -> `orchestrator` from the `advanced` profile only after bounded workstreams, success criteria, and validation evidence are clear; if it is unavailable, use the Universal Development Loop serially or return an orchestration follow-up candidate.
-- Bounded first-pass helper work that benefits from cheap/offline local context, such as long-context retrieval, JSON extraction, scoped review, test ideas, planning, or tool-call checks -> `qwen-local-worker` from the `advanced` profile when the target machine has a configured `qwen-local` provider.
+- Broad independent tracks -> `orchestrator` only after bounded workstreams, success criteria, and validation evidence are clear; use `implementation-worker` for bounded non-overlapping edit slices when installed. If the worker or orchestration is unavailable, keep edit-mode work serial unless equivalent scoped permissions or isolated execution are explicitly configured.
+- Bounded first-pass helper work that benefits from cheap/offline local context, such as long-context retrieval, JSON extraction, scoped review, test ideas, planning, or tool-call checks -> `qwen-local-worker` when the target machine has a configured `qwen-local` provider.
 - Session delivery-control review for current-session todos/user prompts/question replies plus transcript/summary, compaction/resume continuity, changed files, and validation output -> `session-delivery-reviewer`.
-- Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; concrete process friction -> `just-in-time-process-improvement-worker`, which claims the `instruction:feedback -- --claim-session-improvement` cap before edits; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `project-sessions-retro`. Full current-project retros require `retro:project-ledger`; large archives use `orchestrator` plus `session-observation-worker`; promoted trends use `root-cause-analysis`, plans use `deep-task-planning`, durable follow-ups use `openspec-propose`, and final material handoff uses `session-delivery-reviewer`. All-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `all-sessions-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
+- Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; current-session friction notes -> `complain`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
 - Documentation review selection: use `documentation-learning-quest` for guided onboarding, `file-review-quest` for one-file block review, `documentation-hardening-loop` for non-trivial doc/spec hardening, `openspec-consistency-review` for OpenSpec synchronization, and `codebase-audit-loop` only for exhaustive codebase audits.
 - Code maintainability/readability after non-trivial implementation, refactoring, large-file navigation, duplication, DRY/SOLID/YAGNI, or design-pattern trade-off work -> `code-quality-audit`; use `code-quality-reviewer` as the read-only gate.
 
 ## Reviewer Gate Map
 
-- Instruction artifacts, skills, agents, prompts, `AGENTS.md`, and README routing -> `instruction-artifact-reviewer`; one-session process-friction improvements -> `just-in-time-process-improvement-worker` plus `npm run instruction:feedback -- --claim-session-improvement`.
+- Instruction artifacts, skills, agents, prompts, `AGENTS.md`, and README routing -> `instruction-artifact-reviewer`.
 - Code health, maintainability, readability, file navigation, duplication, boundaries, and pragmatic refactoring -> `code-quality-reviewer`.
 - Implementation readiness, stable scope, blockers, validation path -> `implementation-readiness-reviewer`.
 - Session delivery alignment, current-session todos/user prompts/question replies, compaction continuity, proportional rigor, missed work, risks, validation/review completeness, and acceptance handoff -> `session-delivery-reviewer`.
@@ -362,15 +274,11 @@ Use OpenSpec as a durable follow-up tracker when a session produces a real backl
 
 This repository's OpenSpec guide starts at `openspec/project.md`; active changes live under `openspec/changes/<change-id>/`.
 
-- Good triggers: codebase audits, session retros, instruction-artifact audits, reviewer gates, broad discovery, and validation failure triage that produce several concrete tasks outside the current approved scope.
+- Good triggers: codebase audits, instruction-artifact audits, reviewer gates, broad discovery, and validation failure triage that produce several concrete tasks outside the current approved scope.
 - Bad triggers: isolated nits, speculative polish, local style preferences, duplicated final-answer bullets, or one obvious next step.
 - Prefer one OpenSpec change per coherent outcome, capability, risk area, or artifact family. For lightweight backlog changes, `tasks.md` can be the primary surface; add proposal/spec/design detail only when requirements, behavior, compatibility, architecture, or acceptance criteria need it.
 - Create or update OpenSpec files only when the repository already has an OpenSpec workflow or the user approved adding one; otherwise return grouped follow-up candidates as continuation items.
-- Reviewer agents remain read-only: they recommend OpenSpec follow-up tracking in `Actionable Continuation Items`; the main session owns any file writes and `next-step` continuation.
-
-## Just-In-Time Process Improvement
-
-Do not add archive-time learning ceremony to OpenSpec. When a session exposes concrete process friction, delegate one bounded improvement to `just-in-time-process-improvement-worker`; the worker claims the session cap before edits. The worker edits only the approved atomic surface, runs focused validation, and returns a `JIT_PROCESS_IMPROVEMENT_REPORT`; the main session owns any reviewer gate before final handoff.
+- Reviewer agents remain read-only for source/config/instruction/spec/task artifacts; their only default write exception is feedback-ledger entries under `docs/feedbacks/**` through `complain`. They recommend OpenSpec follow-up tracking in `Actionable Continuation Items`; the main session owns any OpenSpec writes and `next-step` continuation.
 
 ## Skill Catalog
 
@@ -381,12 +289,10 @@ Do not add archive-time learning ceremony to OpenSpec. When a session exposes co
 - `next-step`: discover OpenSpec-backed workstreams, choose one serial next step, or hand bounded independent streams to `orchestrator` when safe.
 - `merge-request-author`: reviewer-friendly PR/MR title/body/validation/risk authoring.
 - `merge-request-review-loop`: autonomous MR/PR review follow-up for status checks, reviewer feedback, local fixes, revalidation, outcome handoff, and remote-action gates.
-- `merge-then-openspec-roi`: one-shot loop that batch-merges every open MR/PR on the default branch, refreshes the trunk, then drives the highest-ROI OpenSpec change to archive plus MR while emitting worktree prompts for safe parallel changes.
 - `instruction-artifact-tuning`: review/tune skills, agents, prompts, and `AGENTS.md`.
 - `orchestrator`: prompt-only master coordination for broad independent work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead.
-- `all-sessions-retro`: analyze all reachable OpenCode sessions across projects and installs, synthesize trends/root causes, and when authorized design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
-- `project-sessions-retro`: analyze bounded/current-project session history through a `sessions -> observations -> trends -> root causes -> plans -> OpenSpec proposals` ledger.
 - `root-cause-analysis`: evidence-backed 5 Whys/causal-chain analysis for symptoms, recurrence paths, unknown-cause investigations, and remediation-ready cause records.
+- `complain`: record current-session workflow friction, instruction conflicts, tooling pain, validation noise, or reusable improvement opportunities in `docs/feedbacks/**`.
 
 ### Review And Learning
 
@@ -434,9 +340,8 @@ Do not add archive-time learning ceremony to OpenSpec. When a session exposes co
 - `performance-reliability-reviewer`: latency, throughput, starvation, overload, recovery evidence.
 - `deployment-config-reviewer`: config/deployment readiness and operational safety.
 - `protocol-api-reviewer`: framed/client API, schema evolution, correlation, reconnect.
+- `implementation-worker`: write-capable worker for one bounded non-overlapping implementation slice with scoped edits, TDD/test-first when behavior changes, focused validation, and report-only handoff.
 - `qwen-local-worker`: optional local Qwen3.6 first-pass helper for bounded long-context retrieval, JSON extraction, scoped review, test ideas, planning, and tool-call checks; requires a configured `qwen-local` OpenAI-compatible provider.
-- `just-in-time-process-improvement-worker`: write-capable worker for one bounded process improvement per session; it claims the `instruction:feedback` cap before edits.
-- `session-observation-worker`: read-only project retro batch worker that reviews transcript JSON and returns sanitized audit/observation patch drafts for the main session to validate and apply.
 - `wire-protocol-reviewer`: byte-level protocol/transport review.
 - `legacy-evidence-reviewer`: requirement/design verification against legacy evidence.
 - `legacy-client-compatibility-reviewer`: compatibility with legacy clients/tools/workflows.
@@ -445,7 +350,7 @@ Do not add archive-time learning ceremony to OpenSpec. When a session exposes co
 
 Project plugin behavior:
 
-- `.opencode/plugin/session-env.ts` registers the `session_delivery_context` custom tool for current-session delivery evidence and injects `OPENCODE_SESSION_ID` into shell commands for manual CLI use. `session-delivery-reviewer` uses normal OpenCode model selection. `install:global` installs this plugin plus its `opencode-dev-kit/tools` support files under the target OpenCode config directory without pruning unrelated user plugins.
+- `.opencode/plugin/session-env.ts` registers the `session_delivery_context` custom tool for current-session delivery evidence and injects `OPENCODE_SESSION_ID` into shell commands for manual CLI use. `session-delivery-reviewer` uses normal OpenCode model selection. `install:global` installs this plugin plus its `opencode-dev-kit/tools/session-delivery-context.ts` support file under the target OpenCode config directory without pruning unrelated user plugins.
 
 ## Instruction Templates
 
@@ -475,10 +380,10 @@ Overly narrow future-scope behavior that depended on one product domain was inte
 - Keep artifacts project-neutral unless the artifact name explicitly scopes a reusable domain.
 - Prefer concrete evidence, validation, permissions, and output schemas over vague instructions.
 - For repetitive, evidence-heavy, or token-heavy workflows, consider a small deterministic helper before adding more prose process.
-- When several session-scoped follow-ups appear outside approved scope, prefer grouping them into OpenSpec changes when OpenSpec exists or is approved instead of leaving an untracked final-message backlog; avoid OpenSpec ceremony for isolated nits, one obvious next step, or JIT process improvements.
+- When several session-scoped follow-ups appear outside approved scope, prefer grouping them into OpenSpec changes when OpenSpec exists or is approved instead of leaving an untracked final-message backlog; avoid OpenSpec ceremony for isolated nits or one obvious next step.
 - Helper automation in skills or agents must be deterministic and contract-driven: explicit inputs/outputs, fixtures or schemas, stable ordering, privacy-safe output, and no hidden heuristics.
 - Implementation-capable artifacts should require TDD/test-first by default for behavior changes, or require an explicit infeasibility note plus the closest reproducible validation evidence.
 - Keep TDD proportional: require the smallest useful test/gate for the scoped behavior, not unrelated coverage expansion or speculative test suites.
-- Reviewer agents should keep the compact `Leaf Contract`, ordered findings, residual risks, and `Actionable Continuation Items`; mutation-capable tools stay denied except for the bounded `just-in-time-process-improvement-worker`.
+- Reviewer agents should keep the compact `Leaf Contract`, ordered findings, residual risks, and `Actionable Continuation Items`; mutation-capable tools stay denied except scoped `docs/feedbacks/**` appends through `complain` and explicitly validated bounded worker exceptions such as `implementation-worker`.
 - Avoid hardcoded commands and paths. Use placeholders or say to use the repository's configured validation command.
 - If a target repository has stricter local instructions, local instructions win.

@@ -14,7 +14,7 @@ Use this loop for AI-assisted development in any project. Technology adapters ma
 8. `Review Gate`: run the relevant read-only reviewer only when risk justifies it, such as code quality, test coverage, readiness, security, performance, deployment, protocol, or compatibility.
 9. `Final Validation`: run broader validation when the change crosses module, public API, deployment, data, protocol, or compatibility boundaries.
 10. `Handoff`: for material/complex sessions, run `session-delivery-reviewer` with bundle: goal/constraints, transcript/summary plus compaction state, files/diffstat, validation, reviewer fixes, risks. Skip only for trivial/bounded work or unavailable inputs, and report why. Then report changed files, evidence, validation, reviewer findings, residual risks, and ready-to-land status. Ask the user only for real blockers or user-owned decisions.
-11. `Process Improvement`: when repeated friction appears, prefer a deterministic helper, validator, fixture, report, or template over adding another prose reminder.
+11. `Process Improvement`: when current-session friction appears, use `complain` to capture it in `docs/feedbacks/**`; after patterns accumulate, prefer a deterministic helper, validator, fixture, report, or template over adding another prose reminder.
 
 ## Token And Time Rules
 
@@ -28,7 +28,7 @@ Use this loop for AI-assisted development in any project. Technology adapters ma
 
 - Tests and executable validation outrank documentation-only confidence.
 - TDD/test-first is the default for behavior changes, with explicit exceptions only.
-- Reviewers are leaf validators by default: read-only, no edits, no commits, no nested agents, no user questions.
+- Reviewers are leaf validators by default: read-only except feedback-ledger appends under `docs/feedbacks/**`, no source/config/instruction edits, no commits, no nested agents, no user questions.
 - Deterministic helpers must have explicit inputs, outputs, stable ordering, privacy-safe output, and no hidden heuristics.
 - Remote, destructive, credentialed, legal/security, product-owner, and MR/PR outcome decisions remain user-owned.
 

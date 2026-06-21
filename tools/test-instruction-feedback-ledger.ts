@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import {
   addLedgerEntry,
   advanceLedgerEntry,
-  claimSessionImprovement,
   createStillFailingEntry,
   decayReport,
   loadLedger,
@@ -112,41 +111,6 @@ const tests: TestCase[] = [
       const ledger = loadLedger(ledgerPath);
       assertEqual(ledger.schemaVersion, 1, "Missing ledger must load as schemaVersion 1.");
       assertEqual(ledger.entries.length, 0, "Missing ledger must have no entries.");
-      assertEqual(ledger.sessionImprovementClaims.length, 0, "Missing ledger must have no session improvement claims.");
-    }),
-  },
-  {
-    name: "claims one just-in-time improvement per session",
-    run: () => withTempLedger("session-claim", (ledgerPath) => {
-      const ledger = loadLedger(ledgerPath);
-      const first = claimSessionImprovement(ledger, {
-        sessionRef: "session-1",
-        sourceRef: "reviewer:p1-friction",
-        improvementSummary: "Tighten one agent output contract.",
-      }, "2026-01-01T00:00:00.000Z");
-      const second = claimSessionImprovement(ledger, {
-        sessionRef: "session-1",
-        sourceRef: "reviewer:p1-friction-2",
-        improvementSummary: "Add another process improvement.",
-      }, "2026-01-01T00:01:00.000Z");
-      assertEqual(first.status, "claimed", "First session improvement must be claimed.");
-      assertEqual(second.status, "already-claimed", "Second session improvement must be blocked.");
-      assertEqual(second.claim.sourceRef, "reviewer:p1-friction", "Second claim must report original claim evidence.");
-      writeLedger(ledgerPath, ledger);
-      const persisted = loadLedger(ledgerPath);
-      assertEqual(persisted.sessionImprovementClaims.length, 1, "Only one session improvement claim must persist.");
-    }),
-  },
-  {
-    name: "claim CLI writes default .opencode state ledger and blocks repeats",
-    run: () => withTempRepo("session-claim-cli", (repo) => {
-      const first = invokeLedgerCli(repo, ["--claim-session-improvement", "--session", "session-cli", "--source-ref", "reviewer:p1", "--summary", "Improve worker contract."]);
-      const ledgerPath = path.join(repo, ".opencode", "state", "instruction-feedback-ledger.json");
-      assertEqual(first.status, 0, `First claim must pass, got ${first.status}: ${first.output}`);
-      assert(fs.existsSync(ledgerPath), "Default ledger must live under .opencode/state.");
-      const second = invokeLedgerCli(repo, ["--claim-session-improvement", "--session", "session-cli", "--source-ref", "reviewer:p2", "--summary", "Improve another contract."]);
-      assert(second.status !== 0, `Second claim must fail, got ${second.status}: ${second.output}`);
-      assert(second.output.includes("already-claimed"), `Second claim output must name already-claimed, got ${second.output}.`);
     }),
   },
   {

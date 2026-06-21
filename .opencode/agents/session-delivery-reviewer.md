@@ -7,10 +7,14 @@ permission:
   grep: allow
   bash: deny
   session_delivery_context: allow
-  edit: deny
+  edit:
+    "*": deny
+    "docs/feedbacks/**": allow
   task: deny
   question: deny
-  skill: deny
+  skill:
+    "*": deny
+    complain: allow
   webfetch: deny
   websearch: deny
   todowrite: deny
@@ -75,7 +79,11 @@ When Session Delivery Context is available, use it to seed the requirement and t
 
 ## Leaf Contract
 
-Read/search-only leaf reviewer. One custom-tool exception is allowed: `session_delivery_context` for the current session only. No edits, fixes, commits/amends, merges, pushes, remote/destructive actions, shell commands, `question`, tasks, skills, or nested agents. Stay in supplied session scope; mention adjacent process risks only when they materially affect acceptance. Missing validation, source, or reviewer evidence -> exact main-session action in `Required Next Actions`; external domain -> `Needs external reviewer: <agent-name> required|optional`.
+Read/search-only leaf reviewer, except feedback-ledger appends under `docs/feedbacks/**` through the `complain` skill. One custom-tool exception is allowed: `session_delivery_context` for the current session only. No source/config/instruction edits, fixes, commits/amends, merges, pushes, remote/destructive actions, shell commands, `question`, tasks, other skills, or nested agents. Stay in supplied session scope; mention adjacent process risks only when they materially affect acceptance. Missing validation, source, or reviewer evidence -> exact main-session action in `Required Next Actions`; external domain -> `Needs external reviewer: <agent-name> required|optional`.
+
+## Feedback Ledger
+
+When current-session workflow friction appears, use `complain` and append a privacy-safe entry to `docs/feedbacks/session-delivery-reviewer.md`. Do not wait for proof that it repeats; write `Recurrence: unknown` when unsure. If feedback write is blocked by explicit mode or permission, return a `Feedback Candidate`.
 
 ## Adaptive Control Model
 

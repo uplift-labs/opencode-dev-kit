@@ -12,7 +12,7 @@ type Options = {
   audit: boolean;
   pullBack: boolean;
   forceOverwrite: boolean;
-  noPrune: boolean;
+  prune: boolean;
   noBackup: boolean;
   profile: string;
   skipAgentsMd: boolean;
@@ -56,6 +56,11 @@ type PullBackChange = {
   drift: DriftEntry;
 };
 
+type AgentsMdPlan = {
+  existing: string;
+  next: string;
+};
+
 const BEGIN_MARKER = "<!-- agents-and-skills:begin -->";
 const END_MARKER = "<!-- agents-and-skills:end -->";
 
@@ -67,16 +72,20 @@ Options:
   --config-dir <path>         OpenCode config directory. Default: ~/.config/opencode
   --agents-md-source <path>   Source file to install into global AGENTS.md block.
                               Default: instructions/global-opencode-agent-instructions.md
-  --profile <name>            Restrict install to profiles/<name>.json. Known: standard, strict,
-                              advanced. Default: all repo skills/agents.
-  --skip-agents-md           Install only skills and agents.
+  --profile <name>            Install profiles/<name>.json. Known: all. Default: all.
+  --skip-agents-md           Skip the managed AGENTS.md block; skills, agents, plugin, and support files still install.
   --audit                    Report source-vs-destination drift without writing.
   --pull-back                Create investigation OpenSpec changes for drift without overwriting.
   --force-overwrite          Opt into legacy overwrite-with-backup behavior for drift.
-  --no-prune                 Keep destination skills/agents not present in this repository.
-  --no-backup                Replace changed or pruned artifacts without backup copies.
+  --prune                    Delete destination skills/agents not present in this repository.
+  --no-prune                 Keep destination-only skills/agents (default; compatibility no-op).
+  --no-backup                Skip backups for authorized --force-overwrite or --prune writes.
   --dry-run, --what-if       Preview changes without writing files.
   --help                     Show this help.
+
+Default install refuses drift in skills, agents, AGENTS.md, plugins, and support tools.
+Ask OpenCode to smart-merge drifted global artifacts, use --pull-back for investigation files,
+or use --force-overwrite only when discarding destination changes is intentional.
 `);
 }
 
@@ -103,7 +112,7 @@ function parseArgs(args: string[]): Options {
     audit: false,
     pullBack: false,
     forceOverwrite: false,
-    noPrune: false,
+    prune: false,
     noBackup: false,
     profile: "all",
     skipAgentsMd: false,
@@ -131,8 +140,10 @@ function parseArgs(args: string[]): Options {
       options.profile = readInlineOptionValue(arg.slice("--profile=".length), "--profile");
     } else if (arg === "--skip-agents-md" || arg === "-SkipAgentsMd") {
       options.skipAgentsMd = true;
+    } else if (arg === "--prune") {
+      options.prune = true;
     } else if (arg === "--no-prune" || arg === "-NoPrune") {
-      options.noPrune = true;
+      options.prune = false;
     } else if (arg === "--no-backup" || arg === "-NoBackup") {
       options.noBackup = true;
     } else if (arg === "--dry-run" || arg === "--what-if" || arg === "-WhatIf") {
@@ -142,7 +153,7 @@ function parseArgs(args: string[]): Options {
     } else if (arg === "--pull-back") {
       options.pullBack = true;
     } else if (arg === "--force-overwrite") {
-      options.forceOverwrite = arg === "--force-overwrite";
+      options.forceOverwrite = true;
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -515,6 +526,7 @@ function printDriftReport(drift: DriftEntry[]): void {
 
 function printDriftRecovery(configDir: string, profile: string, skipAgentsMd: boolean): void {
   const common = [`--config-dir "${configDir}"`, profile === "all" ? "" : `--profile ${profile}`, skipAgentsMd ? "--skip-agents-md" : ""].filter(Boolean).join(" ");
+  console.log(`Escalation: ask OpenCode to smart-merge the listed global artifacts in ${configDir}; preserve destination-only customizations and source improvements.`);
   console.log(`Recovery: npm run install:global -- ${common} --pull-back`);
   console.log(`Recovery: npm run install:global -- ${common} --force-overwrite`);
 }
@@ -688,6 +700,15 @@ function createPullBackChanges(repoRoot: string, drift: DriftEntry[], runStamp: 
     changes.push({ id, path: changeRoot, status: existing == null ? "created" : "existing", drift: entry });
   }
   return changes;
+}
+
+function previewPullBackChanges(repoRoot: string, drift: DriftEntry[], runStamp: string): PullBackChange[] {
+  const changesRoot = path.join(repoRoot, "openspec", "changes");
+  return drift.map((entry) => {
+    const existing = findExistingPullBack(changesRoot, entry);
+    const id = existing ?? `install-pullback-${runStamp.toLowerCase()}-${slug(entry.relative)}`.slice(0, 96).replace(/-+$/g, "");
+    return { id, path: path.join(changesRoot, id), status: existing == null ? "created" : "existing", drift: entry };
+  });
 }
 
 function copyPath(source: string, destination: string): void {
@@ -876,7 +897,7 @@ function readExistingAgentsMd(destination: string): string {
   }
 }
 
-function installAgentsMd(source: string, destination: string, context: InstallContext): void {
+function planAgentsMd(source: string, destination: string): AgentsMdPlan {
   const existing = readExistingAgentsMd(destination);
   validateAgentsMdMarkers(existing, destination);
   const newline = existing ? detectNewline(existing) : "\n";
@@ -892,6 +913,31 @@ function installAgentsMd(source: string, destination: string, context: InstallCo
     const separator = existing.endsWith(`${newline}${newline}`) ? "" : existing.endsWith(newline) ? newline : `${newline}${newline}`;
     next = `${existing}${separator}${block}`;
   }
+
+  return { existing, next };
+}
+
+function collectAgentsMdDrift(source: string, destination: string): DriftEntry[] {
+  if (!pathExists(destination)) {
+    return [];
+  }
+  const { existing, next } = planAgentsMd(source, destination);
+  if (existing === next) {
+    return [];
+  }
+  return [{
+    destination,
+    destinationHash: artifactHash(destination),
+    label: "AGENTS.md",
+    relative: "AGENTS.md",
+    source,
+    sourceHash: artifactHash(source),
+    type: "file",
+  }];
+}
+
+function installAgentsMd(source: string, destination: string, context: InstallContext): void {
+  const { existing, next } = planAgentsMd(source, destination);
 
   if (existing === next) {
     console.log("unchanged: AGENTS.md block");
@@ -917,8 +963,7 @@ function run(): void {
   const sourceSkillsDir = path.join(repoRoot, ".opencode", "skills");
   const sourceAgentsDir = path.join(repoRoot, ".opencode", "agents");
   const sourcePluginDir = path.join(repoRoot, ".opencode", "plugin");
-  const sourceRetroToolEntrypoint = path.join(repoRoot, "tools", "opencode-project-session-retro-ledger.ts");
-  const sourceRetroToolDir = path.join(repoRoot, "tools", "project-session-retro-ledger");
+  const sourceSessionDeliveryContextTool = path.join(repoRoot, "tools", "session-delivery-context.ts");
   const sourceAgentsMd = options.skipAgentsMd
     ? null
     : resolveSourcePath(options.agentsMdSource, repoRoot, path.join("instructions", "global-opencode-agent-instructions.md"));
@@ -934,8 +979,7 @@ function run(): void {
   assertDirectoryExists(sourceSkillsDir, "source skills");
   assertDirectoryExists(sourceAgentsDir, "source agents");
   assertDirectoryExists(sourcePluginDir, "source plugin");
-  assertFileExists(sourceRetroToolEntrypoint, "source project session retro ledger tool");
-  assertDirectoryExists(sourceRetroToolDir, "source project session retro ledger support");
+  assertFileExists(sourceSessionDeliveryContextTool, "source session delivery context tool");
   if (fs.existsSync(configDir) && !fs.statSync(configDir).isDirectory()) {
     throw new Error(`OpenCode config path exists but is not a directory: ${configDir}`);
   }
@@ -945,9 +989,9 @@ function run(): void {
 
   const allSkillDirs = listDirectories(sourceSkillsDir);
   const allAgentFiles = listFiles(sourceAgentsDir, ".md");
-  const profile = options.profile === "all" ? null : loadProfile(repoRoot, options.profile);
-  const skillDirs = profile == null ? allSkillDirs : filterByProfile(allSkillDirs, (dir) => path.basename(dir), profile.skills, "skill");
-  const agentFiles = profile == null ? allAgentFiles : filterByProfile(allAgentFiles, (file) => path.basename(file, ".md"), profile.agents, "agent");
+  const profile = loadProfile(repoRoot, options.profile);
+  const skillDirs = filterByProfile(allSkillDirs, (dir) => path.basename(dir), profile.skills, "skill");
+  const agentFiles = filterByProfile(allAgentFiles, (file) => path.basename(file, ".md"), profile.agents, "agent");
   const destinationSkillsDir = path.join(configDir, "skills");
   const destinationAgentsDir = path.join(configDir, "agents");
   const destinationPluginDir = path.join(configDir, "plugin");
@@ -957,53 +1001,48 @@ function run(): void {
   assertNoSourceOverlap(configDir, sourceSkillsDir, "--config-dir");
   assertNoSourceOverlap(configDir, sourceAgentsDir, "--config-dir");
   assertNoSourceOverlap(configDir, sourcePluginDir, "--config-dir");
-  assertNoSourceOverlap(configDir, sourceRetroToolDir, "--config-dir");
   assertNoSourceOverlap(destinationSkillsDir, sourceSkillsDir, "destination skills directory");
   assertNoSourceOverlap(destinationAgentsDir, sourceAgentsDir, "destination agents directory");
   assertNoSourceOverlap(destinationPluginDir, sourcePluginDir, "destination plugin directory");
-  assertNoSourceOverlap(destinationSupportToolsDir, sourceRetroToolDir, "destination support tools directory");
+  assertNoSourceOverlap(destinationSupportToolsDir, path.dirname(sourceSessionDeliveryContextTool), "destination support tools directory");
   if (sourceAgentsMd) {
     assertAgentsMdSourceSafe(sourceAgentsMd, destinationAgentsMd, destinationSkillsDir, destinationAgentsDir);
     validateAgentsMdMarkers(readExistingAgentsMd(destinationAgentsMd), destinationAgentsMd);
   }
 
-  const drift = collectDrift([
-    ...skillDirs.map((skillDir) => ({
-      destination: path.join(destinationSkillsDir, path.basename(skillDir)),
-      label: `skill ${path.basename(skillDir)}`,
-      relative: `skills/${path.basename(skillDir)}`,
-      source: skillDir,
-      type: "directory" as const,
-    })),
-    ...agentFiles.map((agentFile) => ({
-      destination: path.join(destinationAgentsDir, path.basename(agentFile)),
-      label: `agent ${path.basename(agentFile, ".md")}`,
-      relative: `agents/${path.basename(agentFile)}`,
-      source: agentFile,
-      type: "file" as const,
-    })),
-    ...listFiles(sourcePluginDir, ".ts").map((pluginFile) => ({
-      destination: path.join(destinationPluginDir, path.basename(pluginFile)),
-      label: `plugin ${path.basename(pluginFile, ".ts")}`,
-      relative: `plugin/${path.basename(pluginFile)}`,
-      source: pluginFile,
-      type: "file" as const,
-    })),
-    {
-      destination: path.join(destinationSupportToolsDir, "opencode-project-session-retro-ledger.ts"),
-      label: "support tool opencode-project-session-retro-ledger",
-      relative: "opencode-dev-kit/tools/opencode-project-session-retro-ledger.ts",
-      source: sourceRetroToolEntrypoint,
-      type: "file" as const,
-    },
-    {
-      destination: path.join(destinationSupportToolsDir, "project-session-retro-ledger"),
-      label: "support tool project-session-retro-ledger",
-      relative: "opencode-dev-kit/tools/project-session-retro-ledger",
-      source: sourceRetroToolDir,
-      type: "directory" as const,
-    },
-  ]);
+  const drift = [
+    ...collectDrift([
+      ...skillDirs.map((skillDir) => ({
+        destination: path.join(destinationSkillsDir, path.basename(skillDir)),
+        label: `skill ${path.basename(skillDir)}`,
+        relative: `skills/${path.basename(skillDir)}`,
+        source: skillDir,
+        type: "directory" as const,
+      })),
+      ...agentFiles.map((agentFile) => ({
+        destination: path.join(destinationAgentsDir, path.basename(agentFile)),
+        label: `agent ${path.basename(agentFile, ".md")}`,
+        relative: `agents/${path.basename(agentFile)}`,
+        source: agentFile,
+        type: "file" as const,
+      })),
+      ...listFiles(sourcePluginDir, ".ts").map((pluginFile) => ({
+        destination: path.join(destinationPluginDir, path.basename(pluginFile)),
+        label: `plugin ${path.basename(pluginFile, ".ts")}`,
+        relative: `plugin/${path.basename(pluginFile)}`,
+        source: pluginFile,
+        type: "file" as const,
+      })),
+      {
+        destination: path.join(destinationSupportToolsDir, "session-delivery-context.ts"),
+        label: "support tool session-delivery-context",
+        relative: "opencode-dev-kit/tools/session-delivery-context.ts",
+        source: sourceSessionDeliveryContextTool,
+        type: "file" as const,
+      },
+    ]),
+    ...(sourceAgentsMd == null ? [] : collectAgentsMdDrift(sourceAgentsMd, destinationAgentsMd)),
+  ].sort((left, right) => left.relative.localeCompare(right.relative));
 
   console.log(`OpenCode global config: ${configDir}`);
   console.log(`Install profile: ${options.profile}`);
@@ -1019,6 +1058,14 @@ function run(): void {
     printDriftReport(drift);
     if (drift.length === 0) {
       console.log("Pull-back no-op. No files were changed.");
+      return;
+    }
+    if (context.dryRun) {
+      for (const change of previewPullBackChanges(repoRoot, drift, context.runStamp)) {
+        const status = change.status === "existing" ? "existing" : "would create";
+        console.log(`${status}: ${change.id} (${change.drift.relative})`);
+      }
+      console.log("Pull-back dry run complete. No files were changed.");
       return;
     }
     for (const change of createPullBackChanges(repoRoot, drift, context.runStamp)) {
@@ -1038,20 +1085,20 @@ function run(): void {
   for (const skillDir of skillDirs) {
     installDirectory(skillDir, path.join(destinationSkillsDir, path.basename(skillDir)), `skill ${path.basename(skillDir)}`, context);
   }
-  if (options.noPrune) {
-    console.log("skipped: stale skill pruning");
-  } else {
+  if (options.prune) {
     pruneStaleDirectories(destinationSkillsDir, new Set(skillDirs.map((dir) => path.basename(dir))), "skill", context);
+  } else {
+    console.log("skipped: stale skill pruning (use --prune to delete destination-only skills)");
   }
 
   console.log(`Installing agents: ${agentFiles.length}`);
   for (const agentFile of agentFiles) {
     installFile(agentFile, path.join(destinationAgentsDir, path.basename(agentFile)), `agent ${path.basename(agentFile, ".md")}`, context);
   }
-  if (options.noPrune) {
-    console.log("skipped: stale agent pruning");
-  } else {
+  if (options.prune) {
     pruneStaleFiles(destinationAgentsDir, new Set(agentFiles.map((file) => path.basename(file))), ".md", "agent", context);
+  } else {
+    console.log("skipped: stale agent pruning (use --prune to delete destination-only agents)");
   }
 
   if (options.skipAgentsMd || sourceAgentsMd == null) {
@@ -1064,8 +1111,7 @@ function run(): void {
   for (const pluginFile of listFiles(sourcePluginDir, ".ts")) {
     installFile(pluginFile, path.join(destinationPluginDir, path.basename(pluginFile)), `plugin ${path.basename(pluginFile, ".ts")}`, context);
   }
-  installFile(sourceRetroToolEntrypoint, path.join(destinationSupportToolsDir, "opencode-project-session-retro-ledger.ts"), "support tool opencode-project-session-retro-ledger", context);
-  installDirectory(sourceRetroToolDir, path.join(destinationSupportToolsDir, "project-session-retro-ledger"), "support tool project-session-retro-ledger", context);
+  installFile(sourceSessionDeliveryContextTool, path.join(destinationSupportToolsDir, "session-delivery-context.ts"), "support tool session-delivery-context", context);
 
   if (options.dryRun) {
     console.log("Dry run complete. No files were changed.");

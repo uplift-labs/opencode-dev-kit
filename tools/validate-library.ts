@@ -22,7 +22,7 @@ const errors: string[] = [];
 const warnings: string[] = [];
 const forbiddenCodeExtensions = new Set([".cjs", ".js", ".mjs", ".ps1", ".psd1", ".psm1", ".py", ".pyw"]);
 const mutationCapablePermissionKeys = new Set(["bash", "edit", "task", "external_directory"]);
-const jitProcessImprovementWorkerFile = "just-in-time-process-improvement-worker.md";
+const implementationWorkerFile = "implementation-worker.md";
 const preventionFeedbackReviewerFiles = [
   "code-quality-reviewer.md",
   "deployment-config-reviewer.md",
@@ -86,19 +86,6 @@ const legacyToolingReferences = [
   "test-library.ps1",
   "install-opencode-global.js",
 ];
-const projectRetroPhaseRows = [
-  "Scope and source inventory",
-  "Batch decomposition",
-  "Per-session observation",
-  "Trend synthesis",
-  "Root-cause analysis",
-  "Plan design",
-  "OpenSpec follow-up routing",
-  "Instruction artifact changes",
-  "Code/test/tooling changes",
-  "Final delivery control",
-];
-
 function addError(message: string): void {
   errors.push(message);
 }
@@ -345,61 +332,6 @@ function getCatalogEntries(readmeText: string, startHeading: string, endHeading:
   return Array.from(match.groups.body.matchAll(/^-\s+`([^`]+)`:/gm), (entry) => entry[1]);
 }
 
-function getFirstColumnRowsAfterMarker(text: string, marker: string): string[] {
-  const markerIndex = text.indexOf(marker);
-  if (markerIndex < 0) {
-    return [];
-  }
-  const rows: string[] = [];
-  let inTable = false;
-  for (const line of text.slice(markerIndex + marker.length).split(/\r?\n/)) {
-    if (!inTable) {
-      if (!/^\s*\|/.test(line)) {
-        continue;
-      }
-      inTable = true;
-    } else if (!/^\s*\|/.test(line)) {
-      break;
-    }
-
-    const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
-    const first = cells[0];
-    if (!first || first === "Phase" || first === "Retro phase" || /^-+$/.test(first)) {
-      continue;
-    }
-    rows.push(first);
-  }
-  return rows;
-}
-
-function validateProjectRetroPhaseRows(text: string, marker: string, label: string, file: string): void {
-  const rows = getFirstColumnRowsAfterMarker(text, marker);
-  const rowCounts = new Map<string, number>();
-  for (const row of rows) {
-    rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1);
-  }
-  for (const [row, count] of rowCounts) {
-    if (count > 1) {
-      addError(`${label} has duplicate phase row '${row}': ${file}`);
-    }
-  }
-  for (const required of projectRetroPhaseRows) {
-    if (!rows.includes(required)) {
-      addError(`${label} must include phase row '${required}': ${file}`);
-    }
-  }
-  for (const row of rows) {
-    if (!projectRetroPhaseRows.includes(row)) {
-      addError(`${label} has unexpected phase row '${row}': ${file}`);
-    }
-  }
-  for (let index = 0; index < projectRetroPhaseRows.length; index++) {
-    if (rows[index] !== projectRetroPhaseRows[index]) {
-      addError(`${label} phase row order mismatch at position ${index + 1}: expected '${projectRetroPhaseRows[index]}' got '${rows[index] ?? "<missing>"}': ${file}`);
-    }
-  }
-}
-
 function getRequiredHeadingSection(readmeText: string, heading: string, readmePath: string): string {
   const pattern = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$\\r?\\n(?<body>.*?)(?=^##\\s+|(?![\\s\\S]))`, "ms");
   const match = readmeText.match(pattern);
@@ -552,6 +484,61 @@ function validateSkills(root: string): string[] {
   return skillNames;
 }
 
+function validateFeedbackLedgerArtifacts(root: string, skillNames: string[]): void {
+  if (!skillNames.includes("complain")) {
+    return;
+  }
+  const skillPath = path.join(root, ".opencode", "skills", "complain", "SKILL.md");
+  const readmePath = path.join(root, "docs", "feedbacks", "README.md");
+  if (!fileExists(skillPath)) {
+    addError(`Missing complain skill file: ${skillPath}`);
+    return;
+  }
+  if (!fileExists(readmePath)) {
+    addError(`Missing feedback ledger README: ${readmePath}`);
+    return;
+  }
+
+  const skillText = readText(skillPath);
+  const readmeText = readText(readmePath);
+  const sharedRequired = [
+    "Source: <agent-or-skill-name>",
+    "Role: main-agent | reviewer | worker | skill",
+    "Type: complaint | suggestion | automation-candidate | instruction-conflict | tooling-friction | context-friction",
+    "Severity: low | medium | high",
+    "Recurrence: current-session-once | current-session-repeated | ledger-match | unknown",
+    "Status: open",
+    "### Complaint",
+    "### Context",
+    "### Evidence From Current Session",
+    "### Impact",
+    "### Desired Future",
+    "### Proposed Direction",
+    "### OpenSpec Follow-Up",
+    "### Related Entries",
+    "raw private prompts",
+    "large logs",
+    "personal blame",
+    "Recurrence: unknown",
+  ];
+  for (const required of sharedRequired) {
+    requireTextContains(skillText, required, "complain skill feedback template", skillPath);
+    requireTextContains(readmeText, required, "feedback ledger README template", readmePath);
+  }
+  for (const required of [
+    "## Direct Write Contract",
+    "docs/feedbacks/<source>.md",
+    "docs/feedbacks/**",
+    "parent directories",
+    "no shell command or project bootstrap is required",
+    "Feedback Candidate",
+    "Do not edit source, config, instructions, specs, code, or task artifacts",
+    "Secrets, credentials, tokens, raw private prompts, or unnecessary private paths",
+  ]) {
+    requireTextContains(skillText, required, "complain skill direct-write contract", skillPath);
+  }
+}
+
 function validateReviewerBashPermission(frontmatter: FrontmatterMap, file: string): void {
   if (frontmatter.get("permission.bash") !== "deny") {
     addError(`Agent permission must set bash: deny: ${file}`);
@@ -565,46 +552,100 @@ function validateReviewerBashPermission(frontmatter: FrontmatterMap, file: strin
   }
 }
 
-function validateJitProcessImprovementWorker(frontmatter: FrontmatterMap, text: string, file: string): void {
+function validateComplainSkillPermission(frontmatter: FrontmatterMap, file: string, owner: string): void {
+  const allowedSkillRules = new Map([
+    ["permission.skill.*", "deny"],
+    ["permission.skill.complain", "allow"],
+  ]);
+  for (const [key, expected] of allowedSkillRules) {
+    if (frontmatter.get(key) !== expected) {
+      addError(`${owner} must set ${key.replace("permission.", "")}: ${expected}: ${file}`);
+    }
+  }
+  for (const [key, value] of frontmatter) {
+    if (key.startsWith("permission.skill.") && allowedSkillRules.get(key) !== value) {
+      addError(`${owner} has unsupported skill permission '${key.replace("permission.skill.", "")}: ${String(value)}': ${file}`);
+    }
+  }
+  if (frontmatter.has("permission.skill") && typeof frontmatter.get("permission.skill") !== "object") {
+    addError(`${owner} must use scoped skill permissions, not skill: ${String(frontmatter.get("permission.skill"))}: ${file}`);
+  }
+}
+
+function validateReviewerFeedbackEditPermission(frontmatter: FrontmatterMap, file: string): void {
+  const allowedEditRules = new Map([
+    ["permission.edit.*", "deny"],
+    ["permission.edit.docs/feedbacks/**", "allow"],
+  ]);
+  for (const [key, expected] of allowedEditRules) {
+    if (frontmatter.get(key) !== expected) {
+      addError(`Agent permission must set ${key.replace("permission.", "")}: ${expected}: ${file}`);
+    }
+  }
+  for (const [key, value] of frontmatter) {
+    if (key.startsWith("permission.edit.") && allowedEditRules.get(key) !== value) {
+      addError(`Agent has unsupported edit permission '${key.replace("permission.edit.", "")}: ${String(value)}': ${file}`);
+    }
+  }
+  if (frontmatter.has("permission.edit") && typeof frontmatter.get("permission.edit") !== "object") {
+    addError(`Agent permission must use scoped edit permissions, not edit: ${String(frontmatter.get("permission.edit"))}: ${file}`);
+  }
+}
+
+function validateImplementationWorker(frontmatter: FrontmatterMap, text: string, file: string): void {
   const allowedBashRules = new Map([
     ["permission.bash.*", "deny"],
-    ["permission.bash.npm run instruction:feedback -- --claim-session-improvement*", "allow"],
-    ["permission.bash.npm run validate*", "allow"],
-    ["permission.bash.npm test*", "allow"],
-    ["permission.bash.node tools/test-*.ts", "allow"],
-    ["permission.bash.git diff*", "allow"],
     ["permission.bash.git status*", "allow"],
+    ["permission.bash.git diff*", "allow"],
+    ["permission.bash.npm test*", "allow"],
+    ["permission.bash.npm run test*", "allow"],
+    ["permission.bash.npm run validate*", "allow"],
+    ["permission.bash.npm run lint*", "allow"],
+    ["permission.bash.npm run typecheck*", "allow"],
+    ["permission.bash.node tools/test-*.ts", "allow"],
+    ["permission.bash.cargo test*", "allow"],
+    ["permission.bash.cargo check*", "allow"],
+    ["permission.bash.cargo clippy*", "allow"],
+    ["permission.bash.go test*", "allow"],
+    ["permission.bash.dotnet test*", "allow"],
   ]);
   if (frontmatter.get("permission.edit") !== "allow") {
-    addError(`JIT process improvement worker must set edit: allow: ${file}`);
+    addError(`Implementation worker must set edit: allow: ${file}`);
   }
   for (const [key, expected] of allowedBashRules) {
     if (frontmatter.get(key) !== expected) {
-      addError(`JIT process improvement worker must set ${key.replace("permission.", "")}: ${expected}: ${file}`);
+      addError(`Implementation worker must set ${key.replace("permission.", "")}: ${expected}: ${file}`);
     }
   }
   for (const [key, value] of frontmatter) {
     if (key.startsWith("permission.bash.") && allowedBashRules.get(key) !== value) {
-      addError(`JIT process improvement worker has unsupported bash permission '${key.replace("permission.bash.", "")}: ${String(value)}': ${file}`);
+      addError(`Implementation worker has unsupported bash permission '${key.replace("permission.bash.", "")}: ${String(value)}': ${file}`);
     }
   }
-  for (const permission of ["task", "question", "skill", "webfetch", "websearch", "todowrite", "external_directory", "lsp", "doom_loop"]) {
+  validateComplainSkillPermission(frontmatter, file, "Implementation worker");
+  for (const permission of ["task", "question", "webfetch", "websearch", "todowrite", "external_directory", "lsp", "doom_loop"]) {
     const key = `permission.${permission}`;
     if (frontmatter.get(key) !== "deny") {
-      addError(`JIT process improvement worker must set ${permission}: deny: ${file}`);
+      addError(`Implementation worker must set ${permission}: deny: ${file}`);
     }
   }
   for (const required of [
     "## Worker Contract",
-    "one just-in-time process improvement",
-    "--claim-session-improvement",
-    "No OpenSpec",
+    "one bounded work slice",
+    "Write scope",
+    "Do not edit outside write scope",
+    "Do not ask the user questions",
     "No commits",
     "TDD/test-first",
-    "instruction-artifact-reviewer",
-    "JIT_PROCESS_IMPROVEMENT_REPORT",
+    "main-session validation gate",
+    "## Feedback Ledger",
+    "docs/feedbacks",
+    "`complain`",
+    "IMPLEMENTATION_WORKER_REPORT",
+    "Run:",
+    "Worker:",
   ]) {
-    requireTextContains(text, required, "JIT process improvement worker contract", file);
+    requireTextContains(text, required, "Implementation worker contract", file);
   }
 }
 
@@ -637,18 +678,20 @@ function validateAgents(root: string): string[] {
     if (frontmatter.has("permission.list")) {
       addError(`Agent permission must not set obsolete permission.list; directory listing is covered by read: ${file}`);
     }
-    if (path.basename(file) === jitProcessImprovementWorkerFile) {
-      validateJitProcessImprovementWorker(frontmatter, text, file);
+    if (path.basename(file) === implementationWorkerFile) {
+      validateImplementationWorker(frontmatter, text, file);
       continue;
     }
     validateReviewerBashPermission(frontmatter, file);
-    for (const permission of ["edit", "task", "question", "skill", "webfetch", "websearch", "todowrite", "external_directory", "lsp", "doom_loop"]) {
+    validateReviewerFeedbackEditPermission(frontmatter, file);
+    validateComplainSkillPermission(frontmatter, file, "Agent permission");
+    for (const permission of ["task", "question", "webfetch", "websearch", "todowrite", "external_directory", "lsp", "doom_loop"]) {
       const key = `permission.${permission}`;
       if (frontmatter.get(key) !== "deny") {
         addError(`Agent permission must set ${permission}: deny: ${file}`);
       }
     }
-    for (const required of ["## Leaf Contract", "No edits", "Needs external reviewer", "`Findings`: ordered by severity", "`Residual Risks`", "`Actionable Continuation Items`"]) {
+    for (const required of ["## Leaf Contract", "No source/config/instruction edits", "Needs external reviewer", "## Feedback Ledger", "docs/feedbacks", "`complain`", "`Findings`: ordered by severity", "`Residual Risks`", "`Actionable Continuation Items`"]) {
       requireTextContains(text, required, "Reusable reviewer leaf contract", file);
     }
     if (text.includes("## Orchestration") || text.includes("Do not modify files.")) {
@@ -683,24 +726,6 @@ function validateReadme(root: string, skillNames: string[], agentNames: string[]
   requireTextContains(routingMap, "instruction-artifact-tuning", "README instruction-artifact route", readmePath);
   requireTextContains(routingMap, "instruction-artifact-audit-runbook.md", "README instruction-artifact route", readmePath);
   requireTextContains(reviewerGateMap, "instruction-artifact-reviewer", "README reviewer gate map", readmePath);
-  if (skillNames.includes("project-sessions-retro")) {
-    requireTextContains(routingMap, "project-sessions-retro", "README project session retro route", readmePath);
-    requireTextContains(routingMap, "all-sessions-retro", "README project session retro route", readmePath);
-    requireTextContains(routingMap, "retro:project-ledger", "README project session retro route", readmePath);
-    requireTextContains(readmeText, "root `retro/`", "README project session retro ledger contract", readmePath);
-    for (const required of [
-      "Full-retro phase routing",
-      "session-observation-worker",
-      "root-cause-analysis",
-      "deep-task-planning",
-      "openspec-propose",
-      "session-delivery-reviewer",
-      "repo-local ignored scratch",
-    ]) {
-      requireTextContains(readmeText, required, "README project session retro phase routing", readmePath);
-    }
-    validateProjectRetroPhaseRows(readmeText, "Full-retro phase routing", "README project session retro phase routing", readmePath);
-  }
   compareCatalog("Skill", skillNames, getCatalogEntries(readmeText, "Skill Catalog", "Agent Catalog", readmePath), readmePath);
   compareCatalog("Agent", agentNames, getCatalogEntries(readmeText, "Agent Catalog", "Instruction Templates", readmePath), readmePath);
   compareCatalog("Instruction template", instructionNames, getCatalogEntries(readmeText, "Instruction Templates", "Porting Notes", readmePath), readmePath);
@@ -737,12 +762,12 @@ function validateAgentsMd(root: string): void {
   for (const fallback of ["unknown", "unreadable", "unsupported", "blocked"]) {
     requireTextContains(agentsText, fallback, "AGENTS.md deterministic helper automation fallback policy", agentsPath);
   }
-  requireTextContains(agentsText, "## Just-In-Time Process Improvement", "AGENTS.md JIT process improvement policy", agentsPath);
-  requireTextContains(agentsText, "just-in-time-process-improvement-worker", "AGENTS.md JIT process improvement policy", agentsPath);
-  requireTextContains(agentsText, "npm run instruction:feedback -- --claim-session-improvement", "AGENTS.md JIT cap handoff", agentsPath);
-  requireTextContains(agentsText, "Do not create OpenSpec changes", "AGENTS.md JIT no-OpenSpec policy", agentsPath);
   requireTextContains(agentsText, "npm run instruction:feedback -- --add", "AGENTS.md prevention feedback ledger handoff", agentsPath);
   requireTextContains(agentsText, "applied -> replayed -> resolved", "AGENTS.md replay gate policy", agentsPath);
+  requireTextContains(agentsText, "## Feedback Ledger", "AGENTS.md feedback ledger policy", agentsPath);
+  requireTextContains(agentsText, "complain", "AGENTS.md feedback ledger policy", agentsPath);
+  requireTextContains(agentsText, "docs/feedbacks", "AGENTS.md feedback ledger policy", agentsPath);
+  requireTextContains(agentsText, "Recurrence: unknown", "AGENTS.md feedback ledger policy", agentsPath);
 
   if (/after (a )?non-trivial user-visible work( cycle)?,? (the main session offers|offer|use the built-in `?question`?|before stopping)/i.test(agentsText)) {
     addError(`AGENTS.md must not require routine post-task question handoff: ${agentsPath}`);
@@ -753,17 +778,8 @@ function validateInstructionFeedbackContracts(root: string): void {
   const helperPath = path.join(root, "tools", "instruction-feedback-ledger.ts");
   if (fileExists(helperPath)) {
     const helperText = readText(helperPath);
-  for (const required of ["--add", "--pending", "--decay-report", "--check-bloat", "--replay-pending", "--claim-session-improvement", "duplicate", "routeRuleWrite", "unsupportedRequest"]) {
+    for (const required of ["--add", "--pending", "--decay-report", "--check-bloat", "--replay-pending", "duplicate", "routeRuleWrite", "unsupportedRequest"]) {
       requireTextContains(helperText, required, "instruction-feedback ledger helper CLI surface", helperPath);
-    }
-  }
-  const workerPath = path.join(root, ".opencode", "agents", jitProcessImprovementWorkerFile);
-  if (!fileExists(workerPath)) {
-    addError(`Missing JIT process improvement worker agent: ${workerPath}`);
-  } else {
-    const workerText = readText(workerPath);
-    for (const required of ["--claim-session-improvement", "one just-in-time process improvement", "No OpenSpec", "TDD/test-first", "JIT_PROCESS_IMPROVEMENT_REPORT"]) {
-      requireTextContains(workerText, required, "JIT process improvement worker agent contract", workerPath);
     }
   }
 }
@@ -818,7 +834,7 @@ function validateInstallForceOverwriteGuard(root: string): void {
   const runBody = bodyOfFunction(installerText, "run");
   const parseBody = bodyOfFunction(installerText, "parseArgs") ?? "";
   const hasExemption = hasInstallForceOverwriteExemption(root);
-  const defaultForceOverwrite = /options\.forceOverwrite\s*=\s*true/.test(parseBody) || (runBody != null && /options\.forceOverwrite\s*=\s*true/.test(runBody.split("collectDrift(")[0] ?? runBody));
+  const defaultForceOverwrite = /forceOverwrite\s*:\s*true/.test(parseBody) || (runBody != null && /options\.forceOverwrite\s*=\s*true/.test(runBody.split("collectDrift(")[0] ?? runBody));
   let bypassesDrift = false;
   if (runBody == null) {
     bypassesDrift = true;
@@ -898,13 +914,12 @@ function validateDevKitContract(root: string): void {
   requireFile(root, "instructions/universal-development-loop.md", "Universal Development Loop instruction");
   requireFile(root, "templates/project/AGENTS.md", "project AGENTS.md template");
   requireFile(root, "templates/project/opencode.json", "project opencode.json template");
+  requireFile(root, "templates/project/docs/feedbacks/README.md", "project feedback ledger template");
   requireFile(root, "templates/project/validation.md", "project validation template");
   requireFile(root, "templates/project/adapter.json", "project adapter template");
   requireFile(root, "templates/ci/github-actions.yml", "CI template");
   requireDirectory(root, "profiles", "install profiles directory");
-  requireFile(root, "profiles/standard.json", "standard profile");
-  requireFile(root, "profiles/strict.json", "strict profile");
-  requireFile(root, "profiles/advanced.json", "advanced profile");
+  requireFile(root, "profiles/all.json", "all install profile");
   requireFile(root, "tools/init-project.ts", "project bootstrap tool");
   requireFile(root, "tools/doctor.ts", "doctor tool");
   requireFile(root, "tools/project-inventory.ts", "project inventory tool");
@@ -925,6 +940,14 @@ function validateDevKitContract(root: string): void {
     const projectTemplateText = readText(projectTemplate);
     requireTextContains(projectTemplateText, "Universal Development Loop", "project AGENTS.md template", projectTemplate);
     requireTextContains(projectTemplateText, "Do not commit, push, merge, delete source artifacts, or alter remote state unless explicitly requested", "project AGENTS.md remote/destructive guard", projectTemplate);
+  }
+
+  const projectFeedbackTemplate = path.join(root, "templates", "project", "docs", "feedbacks", "README.md");
+  if (fileExists(projectFeedbackTemplate)) {
+    const text = readText(projectFeedbackTemplate);
+    for (const required of ["Feedback Ledger", "complain", "Recurrence: unknown", "raw private prompts", "large logs", "personal blame"]) {
+      requireTextContains(text, required, "project feedback ledger template", projectFeedbackTemplate);
+    }
   }
 
   const adapterTemplate = path.join(root, "templates", "project", "adapter.json");
@@ -958,7 +981,7 @@ function validateDevKitContract(root: string): void {
   }
 
   const scripts = readPackageScripts(root);
-  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "instruction:feedback", "code-quality:inventory", "retro:inventory", "retro:analyze", "retro:project-ledger", "openspec:validate", "openspec:gate", "prepush:validate", "validate", "validate:strict", "test"]) {
+  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "instruction:feedback", "code-quality:inventory", "openspec:validate", "openspec:gate", "prepush:validate", "validate", "validate:strict", "test"]) {
     if (!scripts[script]) {
       addError(`package.json missing required opencode-dev-kit script '${script}'`);
     }
@@ -969,9 +992,6 @@ function validateDevKitContract(root: string): void {
   if (scripts["openspec:gate"] && scripts["openspec:gate"] !== "node tools/openspec-operation-gate.ts") {
     addError("package.json script 'openspec:gate' must run node tools/openspec-operation-gate.ts.");
   }
-  if (scripts["retro:project-ledger"] && scripts["retro:project-ledger"] !== "node tools/opencode-project-session-retro-ledger.ts") {
-    addError("package.json script 'retro:project-ledger' must run node tools/opencode-project-session-retro-ledger.ts.");
-  }
   if (scripts["instruction:feedback"] && scripts["instruction:feedback"] !== "node tools/instruction-feedback-ledger.ts") {
     addError("package.json script 'instruction:feedback' must run node tools/instruction-feedback-ledger.ts.");
   }
@@ -980,12 +1000,6 @@ function validateDevKitContract(root: string): void {
   }
   if (scripts.test && !/(^|&&)\s*node\s+tools\/test-install-opencode-global\.ts(\s|$|&&)/.test(scripts.test)) {
     addError("package.json script 'test' must include node tools/test-install-opencode-global.ts.");
-  }
-  if (scripts.test && !/(^|&&)\s*node\s+tools\/test-project-session-retro-ledger\.ts(\s|$|&&)/.test(scripts.test)) {
-    addError("package.json script 'test' must include node tools/test-project-session-retro-ledger.ts.");
-  }
-  if (scripts.test && !/(^|&&)\s*node\s+tools\/test-project-session-retro-ledger-cli\.ts(\s|$|&&)/.test(scripts.test)) {
-    addError("package.json script 'test' must include node tools/test-project-session-retro-ledger-cli.ts.");
   }
   if (scripts["validate:strict"] && !scripts["validate:strict"].includes("--fail-on-warnings")) {
     addError("package.json script 'validate:strict' must pass --fail-on-warnings.");
@@ -1019,6 +1033,27 @@ function validateStringArray(value: unknown, file: string, key: string): string[
   return value;
 }
 
+function findDuplicateStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) {
+      duplicates.add(value);
+    }
+    seen.add(value);
+  }
+  return [...duplicates].sort((left, right) => left.localeCompare(right));
+}
+
+function compareStringSets(actual: string[], expected: string[]): { extra: string[]; missing: string[] } {
+  const actualSet = new Set(actual);
+  const expectedSet = new Set(expected);
+  return {
+    extra: [...actualSet].filter((value) => !expectedSet.has(value)).sort((left, right) => left.localeCompare(right)),
+    missing: [...expectedSet].filter((value) => !actualSet.has(value)).sort((left, right) => left.localeCompare(right)),
+  };
+}
+
 function validateProfiles(root: string, skillNames: string[], agentNames: string[]): void {
   const profilesDir = path.join(root, "profiles");
   if (!directoryExists(profilesDir)) {
@@ -1029,8 +1064,13 @@ function validateProfiles(root: string, skillNames: string[], agentNames: string
   const allowedKeys = new Set(["agents", "description", "extends", "name", "skills"]);
   const extendsMap = new Map<string, string>();
   const profileSkillsMap = new Map<string, string[] | undefined>();
+  const profileAgentsMap = new Map<string, string[] | undefined>();
   const skillSet = new Set(skillNames);
   const agentSet = new Set(agentNames);
+
+  if (profileNames.size !== 1 || !profileNames.has("all")) {
+    addError("Install profiles must contain exactly profiles/all.json; restricted standard/strict/advanced profiles are not supported.");
+  }
 
   for (const file of profileFiles) {
     const name = path.basename(file, ".json");
@@ -1048,8 +1088,6 @@ function validateProfiles(root: string, skillNames: string[], agentNames: string
     }
     if (profile.description != null && typeof profile.description !== "string") {
       addError(`Profile description must be a string: ${file}`);
-    } else if (name === "standard" && typeof profile.description === "string" && /\bdefault\b/i.test(profile.description)) {
-      addError(`Standard profile description must not claim to be the default installer set; installer default is all artifacts: ${file}`);
     }
     if (profile.extends != null) {
       if (typeof profile.extends !== "string" || profile.extends.trim() === "") {
@@ -1062,14 +1100,42 @@ function validateProfiles(root: string, skillNames: string[], agentNames: string
     }
     const skills = validateStringArray(profile.skills, file, "skills");
     profileSkillsMap.set(name, profile.skills == null ? undefined : skills);
+    const duplicateSkills = findDuplicateStrings(skills);
+    if (duplicateSkills.length > 0) {
+      addError(`Profile has duplicate skills ${duplicateSkills.join(", ")}: ${file}`);
+    }
     for (const skill of skills) {
       if (!skillSet.has(skill)) {
         addError(`Profile references missing skill '${skill}': ${file}`);
       }
     }
-    for (const agent of validateStringArray(profile.agents, file, "agents")) {
+    const agents = validateStringArray(profile.agents, file, "agents");
+    profileAgentsMap.set(name, profile.agents == null ? undefined : agents);
+    const duplicateAgents = findDuplicateStrings(agents);
+    if (duplicateAgents.length > 0) {
+      addError(`Profile has duplicate agents ${duplicateAgents.join(", ")}: ${file}`);
+    }
+    for (const agent of agents) {
       if (!agentSet.has(agent)) {
         addError(`Profile references missing agent '${agent}': ${file}`);
+      }
+    }
+  }
+
+  const allProfilePath = path.join(profilesDir, "all.json");
+  if (profileNames.has("all")) {
+    const allSkills = profileSkillsMap.get("all");
+    const allAgents = profileAgentsMap.get("all");
+    if (allSkills == null || allAgents == null) {
+      addError(`profiles/all.json must explicitly list every skill and every agent: ${allProfilePath}`);
+    } else {
+      const skillDiff = compareStringSets(allSkills, skillNames);
+      const agentDiff = compareStringSets(allAgents, agentNames);
+      if (skillDiff.missing.length > 0 || skillDiff.extra.length > 0) {
+        addError(`profiles/all.json must match repository skills. Missing: ${skillDiff.missing.join(", ") || "none"}. Extra: ${skillDiff.extra.join(", ") || "none"}.`);
+      }
+      if (agentDiff.missing.length > 0 || agentDiff.extra.length > 0) {
+        addError(`profiles/all.json must match repository agents. Missing: ${agentDiff.missing.join(", ") || "none"}. Extra: ${agentDiff.extra.join(", ") || "none"}.`);
       }
     }
   }
@@ -1308,48 +1374,40 @@ function validateMarkdownFile(root: string, file: string, forbiddenAnchors: stri
     }
   }
 
-  const isSkillArtifact = /^\.opencode\/skills\/[^/]+\/SKILL\.md$/.test(relative);
-  const isSessionRetroArtifact = isSkillArtifact && (
-    /^\.opencode\/skills\/[^/]*(session|retro)[^/]*\/SKILL\.md$/.test(relative) ||
-    /\b(OpenCode sessions?|session (archive|history|retros?|artifacts?|transcripts?))\b/i.test(text)
-  );
-  if (isSessionRetroArtifact && /\bledger\b/i.test(text)) {
-    const hasRedactedLedger = /redacted.{0,80}ledger|ledger.{0,80}redacted/i.test(text);
-    const hasLedgerWriteApproval = /(write generated ledgers|write a generated ledger file|generated ledger|ledger file).{0,200}(explicitly grants|explicit permission|user approved|user-approved|approved|approval)/is.test(text) ||
-      /(explicitly grants|explicit permission|user approved|user-approved|approved|approval).{0,200}(write generated ledgers|write a generated ledger file|generated ledger|ledger file)/is.test(text);
-    const hasLedgerProhibition = /(never|do not|must not|out of scope|exclude|excluded|not in scope).{0,120}ledger/is.test(text) ||
-      /ledger.{0,120}(out of scope|excluded|not in scope|must not|never)/is.test(text);
-    if (!hasLedgerProhibition && (!hasRedactedLedger || !hasLedgerWriteApproval)) {
-      addError(`Session retro artifact with a session ledger must require redaction and user-approved generated ledger writes: ${file}`);
+}
+
+function validateImplementationWorkerRouting(root: string, agentNames: string[]): void {
+  if (!agentNames.includes("implementation-worker")) {
+    return;
+  }
+
+  for (const relative of [
+    "AGENTS.md",
+    "instructions/global-opencode-agent-instructions.md",
+    "instructions/reusable-project-agent-instructions.md",
+    "templates/project/AGENTS.md",
+  ]) {
+    const file = path.join(root, relative);
+    if (!fileExists(file)) {
+      continue;
+    }
+    const text = readText(file);
+    requireTextContains(text, "implementation-worker", "implementation-worker routing", file);
+    requireTextContains(text, "non-overlapping write scope", "implementation-worker routing", file);
+    requireTextContains(text, "clear acceptance criteria", "implementation-worker routing", file);
+    requireTextContains(text, "focused validation gate", "implementation-worker routing", file);
+    for (const field of ["Mission", "Read scope", "Write scope", "Forbidden", "Verification", "acceptance criteria"]) {
+      requireTextContains(text, field, "implementation-worker handoff fields", file);
     }
   }
-  if (relative === ".opencode/skills/project-sessions-retro/SKILL.md") {
-    for (const required of [
-      "root `retro/`",
-      "Do not return `Findings`",
-      "Partial Inventory",
-      "coverage.status` to `complete`",
-      "full transcript",
-      "status --input retro",
-      "transcript --input retro",
-      "patch-sessions --input retro",
-      "without asking whether batching is desired",
-      "Do not stop after a successful batch",
-      "parallel worker batches",
-      "A batch size of 1-5 sessions is a debugging fallback",
-      "## Phase Skill Routing",
-      "session-observation-worker",
-      "root-cause-analysis",
-      "deep-task-planning",
-      "openspec-propose",
-      "session-delivery-reviewer",
-      "instruction-artifact-reviewer",
-      "repo-local ignored scratch",
-      "--require-complete --require-proposals",
-    ]) {
-      requireTextContains(text, required, "project-sessions-retro anti-false-completion contract", file);
-    }
-    validateProjectRetroPhaseRows(text, "## Phase Skill Routing", "project-sessions-retro phase routing", file);
+
+  const orchestratorPath = path.join(root, ".opencode", "skills", "orchestrator", "SKILL.md");
+  if (fileExists(orchestratorPath)) {
+    const text = readText(orchestratorPath);
+    requireTextContains(text, "implementation-worker", "orchestrator implementation-worker routing", orchestratorPath);
+    requireTextContains(text, "IMPLEMENTATION_WORKER_REPORT", "orchestrator implementation-worker report contract", orchestratorPath);
+    requireTextContains(text, "Run", "orchestrator implementation-worker report contract", orchestratorPath);
+    requireTextContains(text, "Worker", "orchestrator implementation-worker report contract", orchestratorPath);
   }
 }
 
@@ -1357,12 +1415,14 @@ function main(): void {
   const options = parseArgs(process.argv.slice(2));
   const root = options.root;
   const skillNames = validateSkills(root);
+  validateFeedbackLedgerArtifacts(root, skillNames);
   const agentNames = validateAgents(root);
   const instructionNames = getInstructionNames(root);
   validateTypeScriptOnlySourceFiles(root);
   validatePackageScripts(root);
   validateDevKitContract(root);
   validateProfiles(root, skillNames, agentNames);
+  validateImplementationWorkerRouting(root, agentNames);
   validateOpenCodeConfigFiles(root);
   validateReadme(root, skillNames, agentNames, instructionNames);
   validateAgentsMd(root);

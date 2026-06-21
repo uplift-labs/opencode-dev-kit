@@ -11,13 +11,6 @@ export type InstructionStatus = "open" | "applied" | "replayed" | "resolved" | "
 export type ReplayResult = "resolved" | "still-failing" | "not-applicable" | "pending";
 export type LedgerOwner = "this-repo" | "other-repo";
 
-export type SessionImprovementClaim = {
-  sessionRef: string;
-  sourceRef: string;
-  improvementSummary: string;
-  claimedAt: string;
-};
-
 export type InstructionFeedbackEntry = {
   id: string;
   sourceRef: string;
@@ -43,7 +36,6 @@ export type InstructionFeedbackEntry = {
 export type InstructionFeedbackLedger = {
   schemaVersion: 1;
   entries: InstructionFeedbackEntry[];
-  sessionImprovementClaims: SessionImprovementClaim[];
 };
 
 export type AddLedgerEntryResult = {
@@ -65,7 +57,7 @@ export type RouteWriteResult = {
 type CliOptions = {
   root: string;
   ledgerPath: string;
-  command: "add" | "pending" | "decay-report" | "check-bloat" | "replay-pending" | "advance" | "claim-session-improvement" | null;
+  command: "add" | "pending" | "decay-report" | "check-bloat" | "replay-pending" | "advance" | null;
   addFile?: string;
   addJson?: string;
   changeId?: string;
@@ -74,9 +66,6 @@ type CliOptions = {
   status?: InstructionStatus;
   replayResult?: ReplayResult;
   appliedRef?: string;
-  sessionRef?: string;
-  sourceRef?: string;
-  improvementSummary?: string;
   now?: string;
 };
 
@@ -179,16 +168,6 @@ function parseEntry(value: unknown): InstructionFeedbackEntry {
   };
 }
 
-function parseSessionImprovementClaim(value: unknown): SessionImprovementClaim {
-  const input = asRecord(value, "Session improvement claim");
-  return {
-    sessionRef: requireString(input, "sessionRef"),
-    sourceRef: requireString(input, "sourceRef"),
-    improvementSummary: requireString(input, "improvementSummary"),
-    claimedAt: requireString(input, "claimedAt"),
-  };
-}
-
 function entryFromInput(input: Record<string, unknown>, now: string, existingIds: Set<string>): InstructionFeedbackEntry {
   const base = {
     sourceRef: requireString(input, "sourceRef"),
@@ -218,7 +197,7 @@ function entryFromInput(input: Record<string, unknown>, now: string, existingIds
 
 export function loadLedger(ledgerPath: string): InstructionFeedbackLedger {
   if (!fs.existsSync(ledgerPath)) {
-    return { schemaVersion: 1, entries: [], sessionImprovementClaims: [] };
+    return { schemaVersion: 1, entries: [] };
   }
   let parsed: unknown;
   try {
@@ -234,41 +213,18 @@ export function loadLedger(ledgerPath: string): InstructionFeedbackLedger {
   if (!Array.isArray(record.entries)) {
     throw new Error("Ledger entries must be an array.");
   }
-  const rawSessionClaims = record.sessionImprovementClaims == null ? [] : record.sessionImprovementClaims;
-  if (!Array.isArray(rawSessionClaims)) {
-    throw new Error("Ledger sessionImprovementClaims must be an array when present.");
-  }
   const ledger: InstructionFeedbackLedger = {
     schemaVersion: 1,
     entries: record.entries.map(parseEntry),
-    sessionImprovementClaims: rawSessionClaims.map(parseSessionImprovementClaim),
   };
   sortEntries(ledger);
-  ledger.sessionImprovementClaims.sort((left, right) => left.claimedAt.localeCompare(right.claimedAt) || left.sessionRef.localeCompare(right.sessionRef));
   return ledger;
 }
 
 export function writeLedger(ledgerPath: string, ledger: InstructionFeedbackLedger): void {
   sortEntries(ledger);
-  ledger.sessionImprovementClaims.sort((left, right) => left.claimedAt.localeCompare(right.claimedAt) || left.sessionRef.localeCompare(right.sessionRef));
   fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
   fs.writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
-}
-
-export function claimSessionImprovement(ledger: InstructionFeedbackLedger, input: { sessionRef: string; sourceRef: string; improvementSummary: string }, now = new Date().toISOString()): { status: "claimed" | "already-claimed"; claim: SessionImprovementClaim } {
-  const sessionRef = input.sessionRef.trim();
-  const sourceRef = input.sourceRef.trim();
-  const improvementSummary = input.improvementSummary.trim();
-  if (sessionRef === "" || sourceRef === "" || improvementSummary === "") {
-    throw new Error("Session improvement claim requires non-empty sessionRef, sourceRef, and improvementSummary.");
-  }
-  const existing = ledger.sessionImprovementClaims.find((claim) => claim.sessionRef === sessionRef);
-  if (existing != null) {
-    return { status: "already-claimed", claim: existing };
-  }
-  const claim = { sessionRef, sourceRef, improvementSummary, claimedAt: now };
-  ledger.sessionImprovementClaims.push(claim);
-  return { status: "claimed", claim };
 }
 
 export function addLedgerEntry(ledger: InstructionFeedbackLedger, input: Record<string, unknown>, now = new Date().toISOString()): AddLedgerEntryResult {
@@ -533,8 +489,6 @@ function parseArgs(args: string[]): CliOptions {
       options.command = "check-bloat";
     } else if (arg === "--replay-pending") {
       options.command = "replay-pending";
-    } else if (arg === "--claim-session-improvement") {
-      options.command = "claim-session-improvement";
     } else if (arg === "--advance") {
       const value = args[index + 1];
       if (!value) {
@@ -571,27 +525,6 @@ function parseArgs(args: string[]): CliOptions {
       }
       options.changeId = value;
       index++;
-    } else if (arg === "--session") {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Missing value for --session.");
-      }
-      options.sessionRef = value;
-      index++;
-    } else if (arg === "--source-ref") {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Missing value for --source-ref.");
-      }
-      options.sourceRef = value;
-      index++;
-    } else if (arg === "--summary") {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Missing value for --summary.");
-      }
-      options.improvementSummary = value;
-      index++;
     } else if (arg === "--window-days") {
       const value = Number(args[index + 1]);
       if (!Number.isInteger(value) || value < 1) {
@@ -617,7 +550,7 @@ function runCli(): void {
   try {
     const options = parseArgs(process.argv.slice(2));
     if (options.command == null) {
-      throw new Error("Usage: node tools/instruction-feedback-ledger.ts --add <json-file>|--pending|--decay-report|--check-bloat --change <id>|--replay-pending|--claim-session-improvement --session <ref> --source-ref <ref> --summary <text> [--ledger <path>]");
+      throw new Error("Usage: node tools/instruction-feedback-ledger.ts --add <json-file>|--pending|--decay-report|--check-bloat --change <id>|--replay-pending [--ledger <path>]");
     }
     if (options.command === "check-bloat") {
       if (!options.changeId) {
@@ -654,20 +587,6 @@ function runCli(): void {
       const entries = replayPendingEntries(ledger);
       process.stdout.write(`${JSON.stringify({ entries }, null, 2)}\n`);
       if (entries.length > 0) {
-        process.exitCode = 1;
-      }
-    } else if (options.command === "claim-session-improvement") {
-      if (!options.sessionRef || !options.sourceRef || !options.improvementSummary) {
-        throw new Error("--claim-session-improvement requires --session, --source-ref, and --summary.");
-      }
-      const result = claimSessionImprovement(ledger, {
-        sessionRef: options.sessionRef,
-        sourceRef: options.sourceRef,
-        improvementSummary: options.improvementSummary,
-      }, options.now ?? new Date().toISOString());
-      writeLedger(options.ledgerPath, ledger);
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      if (result.status === "already-claimed") {
         process.exitCode = 1;
       }
     }

@@ -1,8 +1,11 @@
+#!/usr/bin/env node
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { discoverDbPaths } from "./sqlite-source.ts";
-import { hashRef, makeDateRange, normalizeCount, normalizeMillis, quoteIdent } from "./utils.ts";
 
+type DateRange = { from: string | null; to: string | null };
 type DeliveryContextEventKind = "message" | "session_input";
 type DeliveryContextQuestionStatus = "replied" | "rejected";
 
@@ -50,7 +53,7 @@ export type SessionDeliveryContextResult = {
       todos: number;
       userMessages: number;
     };
-    dateRange: { from: string | null; to: string | null };
+    dateRange: DateRange;
     sessionRef: string;
     sourceRef: string;
   } | null;
@@ -74,13 +77,13 @@ export type ReadSessionDeliveryContextOptions = {
 };
 
 type SessionRow = Record<string, unknown> & { id: unknown };
+type EventRow = Record<string, unknown> & { id: unknown };
 type DbSchema = Map<string, Set<string>>;
 type RequestedSessionSelection = {
   candidateRefs: Set<string>;
   missingRef: string;
   rawIds: Set<string>;
 };
-type EventRow = Record<string, unknown> & { id: unknown };
 
 const SESSION_REF_PATTERN = /^session_[a-f0-9]{12}$/;
 const OPEN_TODO_STATUSES = new Set(["pending", "in_progress"]);
@@ -89,6 +92,133 @@ const QUESTION_REPLIED_EVENTS = new Set(["question.replied", "question.v2.replie
 const QUESTION_REJECTED_EVENTS = new Set(["question.rejected", "question.v2.rejected"]);
 const PERMISSION_REPLIED_EVENTS = new Set(["permission.replied", "permission.v2.replied"]);
 const STRUCTURAL_SECRET_KEYS = new Set(["cwd", "directory", "id", "message_id", "parent_id", "path", "project_id", "root", "session_id", "sessionid", "share_url", "workspace_id", "worktree"]);
+
+function requireHome(): string {
+  const home = os.homedir();
+  if (!home) {
+    throw new Error("Home directory is not available; pass explicit dbPaths or dataDirs.");
+  }
+  return home;
+}
+
+function expandHome(input: string): string {
+  if (input === "~") {
+    return requireHome();
+  }
+  if (input.startsWith("~/") || input.startsWith("~\\")) {
+    return path.join(requireHome(), input.slice(2));
+  }
+  return input;
+}
+
+function resolveInputPath(input: string): string {
+  return path.resolve(expandHome(input));
+}
+
+function normalizeForDedupe(input: string): string {
+  const resolved = path.resolve(input);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function uniquePaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const candidate of paths) {
+    const key = normalizeForDedupe(candidate);
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(candidate);
+    }
+  }
+  return result;
+}
+
+function candidateDataDirs(options: Pick<ReadSessionDeliveryContextOptions, "dataDirs" | "useDefaultPaths">): string[] {
+  const candidates = [...(options.dataDirs ?? [])];
+  if (options.useDefaultPaths === false) {
+    return uniquePaths(candidates.map(resolveInputPath));
+  }
+  const home = requireHome();
+  if (process.env.OPENCODE_DATA_DIR) {
+    candidates.push(resolveInputPath(process.env.OPENCODE_DATA_DIR));
+  }
+  if (process.env.XDG_DATA_HOME) {
+    candidates.push(path.join(resolveInputPath(process.env.XDG_DATA_HOME), "opencode"));
+  }
+  candidates.push(path.join(home, ".local", "share", "opencode"));
+  if (process.env.LOCALAPPDATA) {
+    candidates.push(path.join(process.env.LOCALAPPDATA, "opencode"));
+  }
+  if (process.env.APPDATA) {
+    candidates.push(path.join(process.env.APPDATA, "opencode"));
+  }
+  candidates.push(path.join(home, "Library", "Application Support", "opencode"));
+  return uniquePaths(candidates.map(resolveInputPath));
+}
+
+function discoverDbPaths(options: Pick<ReadSessionDeliveryContextOptions, "dataDirs" | "dbPaths" | "useDefaultPaths">): string[] {
+  const dataDirs = candidateDataDirs(options);
+  const candidates = [...(options.dbPaths ?? []).map(resolveInputPath)];
+  const explicitDataDirs = new Set((options.dataDirs ?? []).map((dir) => normalizeForDedupe(resolveInputPath(dir))));
+  for (const dir of dataDirs) {
+    const dbPath = path.join(dir, "opencode.db");
+    if (explicitDataDirs.has(normalizeForDedupe(dir)) || fs.existsSync(dbPath)) {
+      candidates.push(dbPath);
+    }
+  }
+  return uniquePaths(candidates);
+}
+
+function hashRef(prefix: string, value: string | null | undefined): string {
+  const normalized = value == null || value === "" ? "<missing>" : value;
+  const digest = crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 12);
+  return `${prefix}_${digest}`;
+}
+
+function quoteIdent(identifier: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+    throw new Error(`Unsafe SQLite identifier: ${identifier}`);
+  }
+  return `"${identifier}"`;
+}
+
+function normalizeCount(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function normalizeMillis(value: unknown): number | null {
+  const numeric = normalizeCount(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+  return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+}
+
+function isoTime(value: number | null): string | null {
+  if (value == null) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function makeDateRange(values: Array<number | null>): DateRange {
+  const concrete = values.filter((value): value is number => value != null && Number.isFinite(value));
+  if (concrete.length === 0) {
+    return { from: null, to: null };
+  }
+  return { from: isoTime(Math.min(...concrete)), to: isoTime(Math.max(...concrete)) };
+}
 
 function tableNames(db: InstanceType<typeof DatabaseSync>): Set<string> {
   const rows = db.prepare("select name from sqlite_master where type = 'table'").all() as Array<{ name: unknown }>;
@@ -158,8 +288,8 @@ function selectedRows(db: InstanceType<typeof DatabaseSync>, schema: DbSchema, r
   const orderBy = schema.get("session")?.has("time_created") === true ? "time_created, id" : "id";
   const rows = db.prepare(`select * from session order by ${orderBy}`).all() as SessionRow[];
   return rows.filter((row) => {
-    const rawID = String(row.id);
-    return requested.rawIds.has(rawID) || requested.candidateRefs.has(hashRef("session", rawID));
+    const rawId = String(row.id);
+    return requested.rawIds.has(rawId) || requested.candidateRefs.has(hashRef("session", rawId));
   });
 }
 
@@ -171,11 +301,8 @@ function resolveRootRow(db: InstanceType<typeof DatabaseSync>, schema: DbSchema,
   const visited = new Set<string>([String(startRow.id)]);
   let current: SessionRow = startRow;
   for (let depth = 0; depth < 64; depth += 1) {
-    const parentId = stringValue((current as Record<string, unknown>).parent_id);
-    if (parentId == null) {
-      break;
-    }
-    if (visited.has(parentId)) {
+    const parentId = stringValue(current.parent_id);
+    if (parentId == null || visited.has(parentId)) {
       break;
     }
     visited.add(parentId);
@@ -466,7 +593,7 @@ export function readSessionDeliveryContext(options: ReadSessionDeliveryContextOp
   const warnings: string[] = [];
   const dbPaths = discoverDbPaths({ dataDirs: options.dataDirs, dbPaths: options.dbPaths, useDefaultPaths: options.useDefaultPaths });
   if (dbPaths.length === 0) {
-    warnings.push("no OpenCode database candidates found; pass --db or --data-dir");
+    warnings.push("no OpenCode database candidates found; pass dbPaths or dataDirs");
   }
 
   for (const dbPath of dbPaths) {

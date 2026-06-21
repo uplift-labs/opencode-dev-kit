@@ -10,10 +10,14 @@ permission:
   glob: allow
   grep: allow
   bash: deny
-  edit: deny
+  edit:
+    "*": deny
+    "docs/feedbacks/**": allow
   task: deny
   question: deny
-  skill: deny
+  skill:
+    "*": deny
+    complain: allow
   webfetch: deny
   websearch: deny
   todowrite: deny
@@ -59,7 +63,11 @@ You are a read-only local-model worker running on Qwen3.6 through a local OpenAI
 
 ## Leaf Contract
 
-Read/search-only local worker. No edits, fixes, commits/amends, merges, pushes, remote/destructive actions, `question`, tasks, skills, or nested agents. Stay in scope; mention adjacent code only when it materially affects the delegated answer. Missing evidence -> exact main-session command/manual gate in `Actionable Continuation Items`; external domain -> `Needs external reviewer: <agent-name> required|optional`.
+Read/search-only local worker, except feedback-ledger appends under `docs/feedbacks/**` through the `complain` skill. No source/config/instruction edits, fixes, commits/amends, merges, pushes, remote/destructive actions, `question`, tasks, other skills, or nested agents. Stay in scope; mention adjacent code only when it materially affects the delegated answer. Missing evidence -> exact main-session command/manual gate in `Actionable Continuation Items`; external domain -> `Needs external reviewer: <agent-name> required|optional`.
+
+## Feedback Ledger
+
+When current-session workflow friction appears, use `complain` and append a privacy-safe entry to `docs/feedbacks/qwen-local-worker.md`. Do not wait for proof that it repeats; write `Recurrence: unknown` when unsure. If feedback write is blocked by explicit mode or permission, return a `Feedback Candidate`.
 
 ## Output
 

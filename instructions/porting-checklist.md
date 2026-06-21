@@ -23,7 +23,8 @@ Use this checklist when moving project-local skills/agents into a global reusabl
 - Skill folder name matches frontmatter `name`.
 - Skill `description` is concrete and under OpenCode's discovery limit.
 - Agent frontmatter uses valid `mode` and least-privilege `permission`.
-- Reviewer agents are read-only leaf validators.
+- Reviewer agents are read-only leaf validators, except scoped feedback-ledger appends under `docs/feedbacks/**` through `complain`.
+- Reviewer agents include a `## Feedback Ledger` section and scoped `permission.edit`/`permission.skill` rules for `docs/feedbacks/**` and `complain`.
 - Reviewer agents include the canonical `## Prevention Feedback` section with `Recurrence Path`, `Prevention Target`, `Prevention Cost`, `Draft Rule`, and `Replay Evidence`.
 - No copied instructions conflict with the target repository's higher-priority rules.
 

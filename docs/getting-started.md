@@ -11,7 +11,7 @@ npm run install:global -- --dry-run
 npm run install:global
 ```
 
-By default, the installer installs every repository skill and reviewer agent globally. It does not prompt for a profile. Use `--profile standard` or another profile only when you intentionally want a smaller install set.
+By default, the installer installs every repository skill and agent globally through the single `all` profile. The repository does not maintain smaller profile splits.
 
 Restart OpenCode after installation because skills, agents, and config-time files are loaded at startup.
 

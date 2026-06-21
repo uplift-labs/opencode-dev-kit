@@ -19,28 +19,15 @@ export type ValidationCommandResult = {
 
 export type ValidationCommandRunner = (root: string, command: ValidationCommand) => ValidationCommandResult;
 
-export type PrePushGitDiffRunner = (root: string, args: string[]) => { status: number | null; stdout?: string; error?: Error | null };
-
 export type ValidationOutput = {
   log: (message: string) => void;
   error: (message: string) => void;
 };
 
-export type BuildPrePushValidationPlanOptions = {
-  changedFiles?: string[];
-};
-
 export type RunPrePushValidationOptions = {
   runner?: ValidationCommandRunner;
   output?: ValidationOutput;
-  changedFiles?: string[];
 };
-
-export type RunPrePushValidationFromInputOptions = RunPrePushValidationOptions & {
-  diffRunner?: PrePushGitDiffRunner;
-};
-
-const emptyTreeSha = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 function quoteWindowsCommandArg(value: string): string {
   if (/^[A-Za-z0-9._/:\\=-]+$/.test(value)) {
@@ -61,80 +48,10 @@ function spawnValidationCommand(root: string, command: ValidationCommand): Retur
   return spawnSync(command.command, command.args, { cwd: root, encoding: "utf8", stdio: "inherit", shell: false });
 }
 
-function normalizePath(value: string): string {
-  return value.replaceAll("\\", "/");
-}
-
-function isZeroSha(value: string): boolean {
-  return /^0{40}$/.test(value);
-}
-
-function isCommitSha(value: string): boolean {
-  return /^[0-9a-fA-F]{40}$/.test(value);
-}
-
-function defaultPrePushGitDiffRunner(root: string, args: string[]): { status: number | null; stdout?: string; error?: Error | null } {
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8", shell: false, maxBuffer: 1024 * 1024 });
-  return { status: result.status, stdout: result.stdout ?? "", error: result.error ?? null };
-}
-
-function changedFilesFromOutput(output: string): string[] {
-  return output.split(/\r?\n/).map((line) => normalizePath(line.trim())).filter((line) => line.length > 0);
-}
-
-function activeOpenSpecScopeFiles(root: string): string[] {
-  const changesRoot = path.join(root, "openspec", "changes");
-  if (!fs.existsSync(changesRoot)) {
-    return [];
-  }
-  return fs.readdirSync(changesRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name !== "archive")
-    .flatMap((entry) => {
-      const tasksPath = path.join(changesRoot, entry.name, "tasks.md");
-      return fs.existsSync(tasksPath) ? [`openspec/changes/${entry.name}/tasks.md`] : [];
-    })
-    .sort((left, right) => left.localeCompare(right));
-}
-
-export function collectPrePushChangedFiles(root: string, input: string, runner: PrePushGitDiffRunner = defaultPrePushGitDiffRunner): string[] | undefined {
-  const files: string[] = [];
-  let sawRefUpdate = false;
-  for (const line of input.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) {
-      continue;
-    }
-    const [, localSha, , remoteSha] = trimmed.split(/\s+/);
-    if (!isCommitSha(localSha ?? "") || !isCommitSha(remoteSha ?? "") || isZeroSha(localSha)) {
-      continue;
-    }
-    sawRefUpdate = true;
-    const args = isZeroSha(remoteSha)
-      ? ["diff", "--name-only", "--diff-filter=ACMRT", emptyTreeSha, localSha]
-      : ["diff", "--name-only", "--diff-filter=ACMRT", remoteSha, localSha];
-    const result = runner(root, args);
-    if (result.error || result.status !== 0) {
-      return activeOpenSpecScopeFiles(root);
-    }
-    files.push(...changedFilesFromOutput(result.stdout ?? ""));
-  }
-  if (!sawRefUpdate) {
-    return undefined;
-  }
-  return Array.from(new Set(files)).sort((left, right) => left.localeCompare(right));
-}
-
-export function buildPrePushValidationPlan(root: string, options: BuildPrePushValidationPlanOptions = {}): ValidationCommand[] {
+export function buildPrePushValidationPlan(root: string): ValidationCommand[] {
   const plan: ValidationCommand[] = [
     { label: "Repository validation", command: "npm", args: ["run", "validate"] },
   ];
-
-  const shardedRetroRoot = path.join(root, "retro");
-  const hasShardedRetroRoot = fs.existsSync(shardedRetroRoot) && fs.statSync(shardedRetroRoot).isDirectory();
-  const retroInput = hasShardedRetroRoot ? "retro" : fs.existsSync(path.join(root, "retro.json")) ? "retro.json" : null;
-  if (retroInput != null) {
-    plan.push({ label: "Project session retro ledger", command: "npm", args: ["run", "retro:project-ledger", "--", "validate", "--input", retroInput, "--root", ".", "--require-complete", "--require-proposals"] });
-  }
 
   if (fs.existsSync(path.join(root, "openspec"))) {
     plan.push({ label: "OpenSpec operation prepush gate", command: "npm", args: ["run", "openspec:gate", "--", "--operation", "prepush"] });
@@ -183,7 +100,7 @@ function defaultRoot(): string {
 export function runPrePushValidation(root: string, options: RunPrePushValidationOptions = {}): number {
   const runner = options.runner ?? defaultCommandRunner;
   const output = options.output ?? { log: console.log, error: console.error };
-  for (const command of buildPrePushValidationPlan(root, { changedFiles: options.changedFiles })) {
+  for (const command of buildPrePushValidationPlan(root)) {
     const exitCode = runCommand(root, command, runner, output);
     if (exitCode !== 0) {
       output.error(`Pre-push validation failed at ${command.label}.`);
@@ -194,17 +111,8 @@ export function runPrePushValidation(root: string, options: RunPrePushValidation
   return 0;
 }
 
-export function runPrePushValidationFromInput(root: string, input: string, options: RunPrePushValidationFromInputOptions = {}): number {
-  return runPrePushValidation(root, {
-    ...options,
-    changedFiles: options.changedFiles ?? collectPrePushChangedFiles(root, input, options.diffRunner),
-  });
-}
-
 function runCli(): number {
-  const root = defaultRoot();
-  const stdin = process.stdin.isTTY ? "" : fs.readFileSync(0, "utf8");
-  return runPrePushValidationFromInput(root, stdin);
+  return runPrePushValidation(defaultRoot());
 }
 
 function isMainModule(): boolean {

@@ -44,7 +44,7 @@ Use the lightest lane that can produce trustworthy evidence. These lanes are pro
 - `Architecture Lane`: use when boundaries, ownership, concurrency, failure model, deployment, observability, migration, or operational safety need decisions before coding. Load the relevant architecture/domain skill such as `service-architecture-design`.
 - `Orchestrated Lane`: use only when at least two independent workstreams have bounded read/write scope, success criteria, and validation evidence. Load `orchestrator` and keep its worker, isolation, integration, validation, and cleanup rules authoritative.
 
-If a referenced OpenSpec, architecture, domain, or orchestrator skill is not installed in the selected kit profile, do not block solely on the missing skill. Use the Universal Development Loop fallback contract, report the missing specialty skill as a residual risk or continuation item, and lower confidence where appropriate.
+If a referenced OpenSpec, architecture, domain, or orchestrator skill is unavailable in the current OpenCode runtime, do not block solely on the missing skill. Use the Universal Development Loop fallback contract, report the missing specialty skill as a residual risk or continuation item, and lower confidence where appropriate.
 
 Do not create a formal plan, OpenSpec change, architecture document, or worker team just because this skill is loaded. Each ceremony must have a concrete trigger and expected evidence value inside the same loop.
 
@@ -97,8 +97,9 @@ Keep this analysis compact. Do not invent business requirements; label assumptio
 Assemble a temporary team only after the lane is chosen.
 
 - Main session: delivery lead, scope owner, user decision point, integration owner, validation owner, final reporter.
-- `explore` subagents: broad read-only mapping, codebase discovery, spec inventory, or evidence collection.
-- `general` subagents: bounded implementation or research slices with exact scope.
+- Runtime-provided `explore` subagents: broad read-only mapping, codebase discovery, spec inventory, or evidence collection; these are OpenCode built-ins, not repository-installed agents.
+- `implementation-worker`: bounded write-capable implementation slices with exact non-overlapping write scope and focused validation.
+- Runtime-provided `general` subagents: fallback bounded research, read-only planning, or explicitly isolated implementation only when equivalent scoped permissions are configured; these are OpenCode built-ins, not repository-installed agents. Otherwise keep edit-mode work serial.
 - Domain skills: method contracts for specific slices, such as protocol, config, legacy, scheduler, benchmark, packaging, or documentation work.
 - Reviewer agents: read-only gates after planning or material changes, such as implementation readiness, code quality/maintainability, OpenSpec architecture, test coverage, performance/reliability, deployment/config, protocol, wire, legacy evidence, or compatibility.
 - `orchestrator`: execution manager for independent tracks; not a substitute for requirements, spec, architecture, or domain rules.

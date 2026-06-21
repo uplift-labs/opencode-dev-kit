@@ -29,6 +29,7 @@ Ask the user before fan-out only when ambiguity, destructive/remote action, loca
 
 - If lane selection, requirements intake, OpenSpec creation, architecture decisions, or planning are still needed, use `adaptive-delivery`, `deep-task-planning`, OpenSpec, or domain skills first.
 - Orchestrator does not replace domain contracts. Include relevant domain-skill constraints in each worker prompt.
+- Use `implementation-worker` for bounded edit-mode slices with non-overlapping write scope and clear validation when installed. If unavailable, keep edit-mode work serial unless an explicitly configured worker has equivalent scoped permissions or isolated execution; generic workers may do read-only discovery or planning only.
 - Planning workers must use `deep-task-planning` and report whether it was loaded; otherwise treat the report as `needs-review` or `blocked`.
 - Workers must not start nested orchestrator runs.
 
@@ -71,7 +72,7 @@ Rules:
 - Do not edit outside write scope. If scope is insufficient, return `Status: blocked`.
 - For behavior changes, add/update the focused failing, acceptance, or characterization test before implementation unless infeasible; report the exception and substitute evidence.
 - Run the most focused relevant verification you can, or explain the blocker.
-- Return exactly one final `ORCH_WORKER_REPORT` envelope.
+- Return exactly one final `ORCH_WORKER_REPORT` envelope, or `IMPLEMENTATION_WORKER_REPORT` when the assigned subagent is `implementation-worker`.
 ```
 
 Workers return:
@@ -103,7 +104,18 @@ Planning Skill: deep-task-planning loaded | deep-task-planning unavailable | not
 </ORCH_WORKER_REPORT>
 ```
 
-Reject or request focused rework for malformed reports, missing planning-skill status for planning workers, out-of-scope edits, weak evidence, or unreadable findings.
+`implementation-worker` workers return their native envelope instead, and the master accepts it when `Run`, `Worker`, `Status`, `Changed Files`, `Validation`, `Blockers`, `Residual Risks`, and `Handoff` are present:
+
+```markdown
+<IMPLEMENTATION_WORKER_REPORT>
+Run: <runID>
+Worker: <workerID>
+Status: done | blocked | needs-review
+...
+</IMPLEMENTATION_WORKER_REPORT>
+```
+
+Reject or request focused rework for malformed reports, missing run/worker identity, missing planning-skill status for planning workers, out-of-scope edits, weak evidence, or unreadable findings.
 
 ## Isolation Rules
 

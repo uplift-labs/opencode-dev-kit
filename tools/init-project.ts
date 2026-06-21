@@ -99,6 +99,7 @@ function plannedFiles(repoRoot: string, targetRoot: string): PlannedFile[] {
   return [
     { label: "project AGENTS.md", source: path.join(templateRoot, "AGENTS.md"), destination: path.join(targetRoot, "AGENTS.md") },
     { label: "project opencode.json", source: path.join(templateRoot, "opencode.json"), destination: path.join(targetRoot, "opencode.json") },
+    { label: "feedback ledger README", source: path.join(templateRoot, "docs", "feedbacks", "README.md"), destination: path.join(targetRoot, "docs", "feedbacks", "README.md") },
     { label: "project validation guide", source: path.join(templateRoot, "validation.md"), destination: path.join(targetRoot, "opencode-dev-kit", "validation.md") },
     { label: "project adapter", source: path.join(templateRoot, "adapter.json"), destination: path.join(targetRoot, "opencode-dev-kit", "adapter.json") },
   ];

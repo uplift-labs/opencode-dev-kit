@@ -16,7 +16,7 @@ Apply the same process for every task, scaled to the size and risk of the change
 8. `Review Gate`: use relevant read-only reviewers only when risk justifies them.
 9. `Final Validation`: broaden validation when boundaries, APIs, data, deployment, or compatibility are affected.
 10. `Handoff`: for material/complex sessions, run `session-delivery-reviewer` with bundle: goal/constraints, transcript/summary plus compaction state, files/diffstat, validation, reviewer fixes, risks. Skip only for trivial/bounded work or unavailable inputs, and report why. Then report changed files, evidence, validation, residual risks, and ready-to-land status.
-11. `Process Improvement`: convert repeated friction into helpers, validators, fixtures, reports, or templates.
+11. `Process Improvement`: capture current-session friction with `complain` in `docs/feedbacks/**`; convert accumulated patterns into helpers, validators, fixtures, reports, or templates.
 
 ## Project Adapter
 
@@ -34,6 +34,9 @@ Apply the same process for every task, scaled to the size and risk of the change
 ## Process Control
 
 - Keep clear small tasks direct and cheap.
+- Use `implementation-worker` for bounded edit-mode implementation slices when the work has exact non-overlapping write scope, clear acceptance criteria, and a focused validation gate.
+- When delegating to `implementation-worker`, pass `Mission`, `Read scope`, `Write scope`, `Forbidden`, `Verification`, and acceptance criteria.
+- Keep implementation serial when `implementation-worker` is unavailable, scope is unclear, write targets overlap, or integration would cost more than doing the work directly.
 - Use prompt-only orchestration only for broad work with independent bounded tracks where coordinated fan-out, fan-in, validation gates, or isolation is worth the overhead.
 - Keep task tracking, integration, validation, reviewer gates, cleanup, and final synthesis in the main session.
 
@@ -44,12 +47,11 @@ Apply the same process for every task, scaled to the size and risk of the change
 - When Headroom MCP tools are available and a log, search result, JSON payload, validation output, or repeated tool output is likely to be reused and exceeds about 300 lines or 10 KB, call `headroom_compress`, keep the returned hash in working notes or final evidence when relevant, and call `headroom_retrieve` before exact claims.
 - Do not use Headroom MCP for small outputs, exact code under active edit, short errors already visible, or safety-critical details that must be quoted exactly.
 - Prefer deterministic helpers, validators, fixtures, or generated reports over repeated manual inspection.
-- Reviewer agents are read-only leaf validators by default.
+- Reviewer agents are read-only leaf validators by default, except feedback-ledger appends under `docs/feedbacks/**` through `complain` when permission allows it.
 
-## Just-In-Time Process Improvement
+## Feedback Ledger
 
-- When concrete workflow friction appears during a session, delegate at most one atomic improvement to `just-in-time-process-improvement-worker` when available.
-- Let the worker claim the cap with `npm run instruction:feedback -- --claim-session-improvement --session <ref> --source-ref <ref> --summary <text>`; pass it the session ref and evidence. If the worker is unavailable and the main session handles the improvement directly, count that edit as the cap for the session.
-- Keep the improvement small and tied to evidence: one skill, one agent, one instruction artifact, one focused validator/test pair, or one small docs correction.
-- Do not create OpenSpec changes, retro files, broad backlogs, or speculative cleanup for JIT process improvements.
-- Instruction-artifact edits need `instruction-artifact-reviewer` before final handoff; helper/tooling behavior changes need the smallest TDD/test-first gate.
+- When current-session workflow friction, instruction conflict, tooling pain, missing automation, confusing handoff, validation noise, or reusable improvement opportunity appears, use the `complain` skill and append a structured entry to `docs/feedbacks/<agent-or-skill-name>.md`.
+- Do not wait for proof that the issue is recurring. If recurrence is unknown, write `Recurrence: unknown`.
+- OpenCode permissions enforce the feedback path boundary; `complain` is the required model contract for entry shape and privacy checks.
+- Keep entries privacy-safe and focused on workflow/tooling/instructions, not personal blame. If writing is blocked, return a `Feedback Candidate`.

@@ -32,14 +32,14 @@
 - Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
 - Deterministic helpers may surface root-cause signals, evidence chains, and missing data, but they must not infer root cause from fuzzy transcript content or hidden heuristics.
 
-## Just-In-Time Process Improvement
+## Feedback Ledger
 
-- When concrete workflow friction appears during a session, the main session may delegate at most one atomic process improvement to `just-in-time-process-improvement-worker`.
-- The worker owns the session cap claim with `npm run instruction:feedback -- --claim-session-improvement --session <ref> --source-ref <ref> --summary <text>`; pass it the session ref and evidence instead of pre-claiming in the main session. If the worker reports `already-claimed`, do not make another process-improvement edit in the session.
-- Keep JIT improvements small: one skill, one agent, one instruction artifact, one focused validator/test pair, or one small docs correction tied to the friction evidence.
-- Do not create OpenSpec changes, retro files, broad backlogs, or speculative cleanup for JIT process improvements.
-- Instruction-artifact JIT edits still need `instruction-artifact-reviewer` before final handoff; behavior-changing helper/tooling edits need the smallest TDD/test-first gate.
-- Prevention entries that use `npm run instruction:feedback -- --add ...` close only after `applied -> replayed -> resolved`; if replay is `still-failing`, reopen and route the applied rule as a new finding.
+- When current-session workflow friction, instruction conflict, tooling pain, missing automation, confusing handoff, validation noise, or reusable improvement opportunity appears, use the `complain` skill and append a structured entry to `docs/feedbacks/<agent-or-skill-name>.md`.
+- Do not wait for proof that the issue is recurring. If recurrence is unknown, write `Recurrence: unknown`; prefer a compact useful signal over suppressing feedback.
+- Keep entries privacy-safe and focused on workflow/tooling/instructions, not personal blame. Do not include secrets, raw private prompts, or large logs.
+- Reviewer agents may edit only `docs/feedbacks/**` for feedback entries; they remain read-only for source, config, instructions, specs, and task artifacts.
+- OpenCode permissions enforce the feedback path boundary; `complain` is the required model contract for entry shape and privacy checks, not a hard semantic enforcement layer.
+- If explicit read-only/no-edit mode or permissions block writing, return a `Feedback Candidate` for the main session instead of dropping the signal.
 
 ## Token Efficiency
 
@@ -55,7 +55,7 @@
 - The main session owns skill selection, decomposition, validation, reviewer gates, MR/PR-ready handoff, and final synthesis.
 - Ask the user only for real blockers: scope or risk decisions, credentials/provider access, missing owner/product/security/legal decisions, destructive operations, remote-state actions, and MR/PR review outcomes.
 - Continue autonomously when local evidence, repository policy, or a safe reversible default is enough; do not ask routine preference or progress questions.
-- Subagents and read-only reviewer gates never ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session.
+- Subagents and read-only reviewer gates never ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session. Feedback-ledger writes under `docs/feedbacks/**` are allowed only through the scoped `complain` contract.
 - Before final handoff for material/complex sessions, run `session-delivery-reviewer` with bundle: goal/constraints, transcript/summary plus compaction state, files/diffstat, validation, reviewer fixes, risks; skip only for trivial/bounded work or unavailable inputs, and report why.
 
 ## Interactive Next-Step Handoff
@@ -65,7 +65,7 @@
 - Make options self-contained so the agent can continue without asking the user to restate context.
 - Treat `(Recommended)` as presentation-only when interpreting the selected option.
 - If the user selects an actionable option, continue immediately in the current context.
-- Read-only reviewer subagents must not call `question` or ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session.
+- Read-only reviewer subagents must not call `question` or ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session. They may write feedback entries only under `docs/feedbacks/**` when permission allows it.
 - When an audit, reviewer gate, broad discovery, or validation failure produces several concrete tasks that are related to the current session but outside its approved scope, prefer grouping them into OpenSpec follow-up changes when the repository already uses OpenSpec or the user approved adding it; otherwise return grouped candidates instead of leaving a loose final-message backlog. Do not create OpenSpec ceremony for isolated nits, speculative polish, or one obvious next step.
 - If no real blocker remains, report completed work, validation, residual risks, and ready-to-land status without an interactive handoff.
 - If a blocker remains and the question tool is unavailable, include a short `Next Steps` fallback with the same recommended-first ordering.
@@ -81,6 +81,9 @@
 
 - Run independent read/search/tool calls in parallel whenever there is no data dependency.
 - Use subagents only when the work is broad enough to benefit from separate context, parallel coverage, or independent review; keep simple searches, single-file reads, and tightly coupled reasoning in the main session.
+- Use `implementation-worker` for bounded edit-mode implementation slices when the work has exact non-overlapping write scope, clear acceptance criteria, and a focused validation gate.
+- When delegating to `implementation-worker`, pass `Mission`, `Read scope`, `Write scope`, `Forbidden`, `Verification`, and acceptance criteria.
+- Keep implementation serial when `implementation-worker` is unavailable, scope is unclear, write targets overlap, or integration would cost more than doing the work directly.
 - Auto-enter master-orchestrator posture only for broad work with multiple independent bounded tracks where coordinated fan-out, fan-in, validation gates, or isolation is worth the overhead; stay serial for small, unclear, or tightly coupled work.
 - When entering master-orchestrator posture, the main session owns decomposition, dispatch, report reconciliation, integration, tests, reviewer gates, cleanup, user decisions, and final synthesis; it should not do substantial worker-assigned implementation directly.
 - Before finishing an orchestrated run, close or explicitly skip with reasons: worker report reconciliation, integration, focused/final validation, review gate, cleanup, residual risks, and next actions.

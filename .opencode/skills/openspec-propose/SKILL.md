@@ -34,7 +34,7 @@ Use this mode when converting several concrete session-scoped follow-ups from an
 - `tasks.md` may be the primary backlog surface for lightweight follow-up changes. Keep `proposal.md` brief but explicit about source evidence, scope, non-goals, and why tracking is needed.
 - Add spec deltas, scenarios, or `design.md` only when normative behavior, compatibility, architecture, migration, or acceptance criteria need a durable source of truth.
 - Carry audit/reviewer/validation evidence into the change so later `next-step` and `openspec-apply-change` runs do not depend on memory or loose final-message bullets.
-- For prevention feedback, preserve `Prevention Target`, recurrence path, draft rule, and replay evidence when the user explicitly chooses OpenSpec tracking instead of JIT improvement.
+- For prevention feedback, preserve `Prevention Target`, recurrence path, draft rule, and replay evidence when the user explicitly chooses OpenSpec tracking instead of ledger-only follow-up.
 
 ## Output
 

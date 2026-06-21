@@ -27,15 +27,15 @@ type SessionDeliveryContextModule = {
 async function loadSessionDeliveryContextModule(): Promise<SessionDeliveryContextModule> {
   const pluginDir = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    path.resolve(pluginDir, "..", "..", "tools", "opencode-project-session-retro-ledger.ts"),
-    path.resolve(pluginDir, "..", "opencode-dev-kit", "tools", "opencode-project-session-retro-ledger.ts"),
+    path.resolve(pluginDir, "..", "..", "tools", "session-delivery-context.ts"),
+    path.resolve(pluginDir, "..", "opencode-dev-kit", "tools", "session-delivery-context.ts"),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       return await import(pathToFileURL(candidate).href) as SessionDeliveryContextModule;
     }
   }
-  throw new Error(`Unable to locate opencode-project-session-retro-ledger.ts from ${pluginDir}`);
+  throw new Error(`Unable to locate session-delivery-context.ts from ${pluginDir}`);
 }
 
 export default {

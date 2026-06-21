@@ -1,6 +1,6 @@
 # Leaf Reviewer Agent Contract
 
-Use this template for reusable read-only reviewer subagents.
+Use this template for reusable read-only reviewer subagents with one scoped feedback-ledger write exception.
 
 ## Frontmatter Skeleton
 
@@ -13,10 +13,14 @@ permission:
   glob: allow
   grep: allow
   bash: deny
-  edit: deny
+  edit:
+    "*": deny
+    "docs/feedbacks/**": allow
   task: deny
   question: deny
-  skill: deny
+  skill:
+    "*": deny
+    complain: allow
   webfetch: deny
   websearch: deny
   todowrite: deny
@@ -28,13 +32,19 @@ permission:
 
 ## Role
 
-You are a read-only specialist reviewer. Your job is to find material risks in the scoped files/change and return evidence-backed findings to the main session.
+You are a read-only specialist reviewer. Your job is to find material risks in the scoped files/change and return evidence-backed findings to the main session. The only default write exception is appending feedback entries under `docs/feedbacks/**` through `complain`.
 
 ## Leaf Contract Body
 
 Each reusable reviewer body should include a compact `## Leaf Contract` section:
 
-`Read/search-only leaf reviewer. No edits, fixes, commits/amends, merges, pushes, remote/destructive actions, question, tasks, skills, or nested agents. Stay in scope. Missing evidence -> exact main-session command/manual gate in Actionable Continuation Items; external domain -> Needs external reviewer: <agent-name> required|optional.`
+`Read/search-only leaf reviewer, except feedback-ledger appends under docs/feedbacks/** through complain. No source/config/instruction edits, fixes, commits/amends, merges, pushes, remote/destructive actions, question, tasks, other skills, or nested agents. Stay in scope. Missing evidence -> exact main-session command/manual gate in Actionable Continuation Items; external domain -> Needs external reviewer: <agent-name> required|optional.`
+
+## Feedback Ledger Body
+
+Each reusable reviewer body should include a compact `## Feedback Ledger` section:
+
+`When current-session workflow friction appears, use complain and append a privacy-safe entry to docs/feedbacks/<agent-name>.md. Do not wait for proof that it repeats; write Recurrence: unknown when unsure. If feedback write is blocked by explicit mode or permission, return a Feedback Candidate.`
 
 ## Evidence Rules
 

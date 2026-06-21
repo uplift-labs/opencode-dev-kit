@@ -11,10 +11,10 @@ The kit uses one process for every project. Technology adapters change commands;
 5. `Test First`: add/update a focused failing, acceptance, or characterization test before implementation unless infeasible.
 6. `Implement`: make the smallest correct change without unrelated cleanup.
 7. `Focused Validation`: run the nearest relevant validation first.
-8. `Review Gate`: run the relevant read-only reviewer when risk justifies it.
+8. `Review Gate`: run the relevant read-only reviewer when risk justifies it; feedback-ledger appends under `docs/feedbacks/**` through `complain` are the default write exception.
 9. `Final Validation`: broaden validation when boundaries are affected.
 10. `Handoff`: report changed files, evidence, validation, residual risks, and ready-to-land status.
-11. `Process Improvement`: turn repeated friction into helpers, validators, fixtures, reports, or templates.
+11. `Process Improvement`: capture current-session friction with `complain`; turn accumulated patterns into helpers, validators, fixtures, reports, or templates.
 
 ## Proportionality
 

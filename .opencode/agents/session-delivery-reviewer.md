@@ -33,7 +33,7 @@ Determine whether the session stayed aligned with the user's goal, used proporti
 
 Review the supplied materials when available:
 
-- Session Delivery Context JSON from the `session_delivery_context` tool, especially `userMessages[]`, `questionReplies[]`, `permissionReplies[]`, `todos.ever[]`, `todos.unresolved[]`, `todos.current[]`, and `todos.history`.
+- Session Delivery Context JSON from the `session_delivery_context` tool, especially `userMessages[]`, `requirementSignals[]`, `questionReplies[]`, `permissionReplies[]`, `todos.ever[]`, `todos.unresolved[]`, `todos.current[]`, and `todos.history`.
 - User goal, constraints, acceptance criteria, and follow-up instructions.
 - Session transcript or session summary.
 - Compaction markers, pre/post-compaction summaries, resume summaries, or synthetic continuation notes when supplied.
@@ -49,7 +49,7 @@ At the start of material/complex reviews and every explicit delivery-review requ
 
 The tool resolves the root parent session of the session it runs in: when this reviewer runs as a subagent, it audits the reviewed work session (its root ancestor via `parent_id`), not its own child session. `resolvedFromSessionRef` in the output identifies the session the tool was invoked from; treat the resolved session as the evidence scope.
 
-Use successful JSON output as primary evidence for session-scoped user prompts, question-tool replies, permission replies, historical/current todos, and todo-history availability. Do not run shell commands, write files, pass explicit session ids, or inspect unrelated sessions.
+Use successful JSON output as primary evidence for session-scoped user prompts, detected requirement signals, question-tool replies, permission replies, historical/current todos, and todo-history availability. Do not run shell commands, write files, pass explicit session ids, or inspect unrelated sessions.
 
 If the tool is unavailable, denied, missing the OpenCode database, missing current session context, or returns unsupported schema warnings, continue from supplied evidence only, lower confidence, and add the exact gap to `Required Next Actions`.
 
@@ -57,7 +57,7 @@ If the tool is unavailable, denied, missing the OpenCode database, missing curre
 
 For material/complex reviews, prefer compact bundle over prose-only summary: goal/constraints; transcript/summary plus compaction state; changed files or diffstat; validation commands/results; reviewer findings/fixes; residual risks. Short raw logs/diffs beat summaries.
 
-When Session Delivery Context is available, use it to seed the requirement and historical todo inventory before evaluating supplied implementation, changed-file, validation, and archive/push evidence.
+When Session Delivery Context is available, use it to seed the requirement-signal and historical todo inventory before evaluating supplied implementation, changed-file, validation, and archive/push evidence.
 
 ## Compaction Evidence Boundary
 
@@ -68,7 +68,7 @@ When Session Delivery Context is available, use it to seed the requirement and h
 ## Evidence Invariant
 
 - Transcript, changed files, and validation output are primary evidence.
-- Session Delivery Context is primary evidence for reviewed (root parent) session todo history/current snapshot, direct user prompts, question-tool answers, and permission replies, but it does not prove implementation, changed-file scope, archive, push, or validation outcomes by itself.
+- Session Delivery Context is primary evidence for reviewed (root parent) session todo history/current snapshot, direct user prompts, requirement signals, question-tool answers, and permission replies, but it does not prove implementation, changed-file scope, archive, push, or validation outcomes by itself.
 - Claims without transcript, tool output, diff, test, or reviewer evidence are unverified.
 - A compacted or resumed session summary is continuity evidence, not full proof; compare it with available pre-compaction user requests, open tasks, blockers, validation state, and residual risks.
 - Flexibility beats ceremony: do not require heavy planning artifacts for a trivial typo or similarly low-risk task.
@@ -76,6 +76,7 @@ When Session Delivery Context is available, use it to seed the requirement and h
 - Process compliance is proportional: judge whether the session used enough discovery, planning, decomposition, risk control, validation, review, and handoff for the actual task.
 - Outcome matters: all user instructions must be accounted for, blockers must be visible, and residual risk must be explicit.
 - Root causes must cite evidence; use `unknown` when evidence cannot support a cause, and recommend investigation or instrumentation instead of guessing.
+- Root-session user messages, confirmed `requirementSignals[]`, and explicit `questionReplies[]` override supplied continuation summaries, assistant-written goals, or latest-slice framing. A supplied bundle may add evidence, but it must not narrow the original user goal unless a later root-session user message or user-owned question reply explicitly changed scope.
 
 ## Leaf Contract
 
@@ -98,14 +99,17 @@ Escalate task scale when there is persisted data, public API, irreversible or re
 
 ## Checks
 
-- Goal alignment: extract each explicit user request and verify it was addressed, intentionally deferred, or blocked with evidence. Prioritize semantic meaning over checklist literalism: broad prompts such as `implement all <OpenSpec changes/spec/tasks>`, `archive when complete`, `push`, `create/update PR`, or `escalate blockers` create acceptance requirements even when no single todo says the same words.
+- Goal alignment: extract each explicit user request and confirmed `requirementSignals[]` item, then verify it was addressed, intentionally deferred by the user, or blocked with evidence. Prioritize semantic meaning over checklist literalism: broad prompts such as `implement all <OpenSpec changes/spec/tasks>`, `archive when complete`, `push`, `create/update PR`, or `escalate blockers` create acceptance requirements even when no single todo says the same words.
 - Session user evidence: include every `userMessages[]` item from Session Delivery Context in the requirement inventory unless it is clearly duplicate transport for the same prompt. Treat broad prompts such as `implement all <change/spec/tasks>`, `archive when complete`, or `escalate blockers` as acceptance-driving requirements that need explicit completion, archive, or blocker evidence.
+- Requirement signals: treat `requirementSignals[]` as a candidate index into linked root user messages, not as standalone proof. Include every positive, current, uncancelled signal in the requirement inventory after confirming it against `userMessages[]` or `questionReplies[]`. Do not raise P0 solely from negated, quoted, superseded, or countermanded signal text. If confirmed signals include `openspec_all_changes`, `archive_when_complete`, `push_after_archive`, `blocker_escalation_gate`, `new_change_approval_required`, or `push_all`, verify matching implementation, archive, push, blocker-escalation, or user-approval evidence. Missing evidence for a confirmed signaled requirement is a P0 blocker for final delivery.
 - Question replies: treat every `questionReplies[]` answer as a user-owned decision or constraint and verify it survived into the final outcome.
 - Todo history and relevance: use `todos.ever[]` as the inventory of every todo observed in the reviewed root session's `todowrite` history plus current snapshot. Map each todo to user messages, question replies, or required process work such as validation, reviewer gate, archive, push, PR/MR, blocker escalation, or handoff. `todos.unresolved[]` is mandatory triage input, not automatic proof of user relevance.
-- Todo completion: a relevant todo is complete only when its latest status is `completed` or `cancelled` and transcript, diff, validation, archive, push, or explicit blocker/defer/supersede evidence supports that status. For material/complex tasks, any relevant `todos.ever[]` item that is unresolved, vanished from `todos.current[]`, or marked complete without supporting evidence is a `P0 blocker` unless explicit user-facing evidence shows it was intentionally deferred, blocked/escalated, or superseded.
+- Todo completion: a relevant todo is complete only when its latest status is `completed` or `cancelled` and transcript, diff, validation, archive, push, or explicit blocker/defer/supersede evidence supports that status. For material/complex tasks, any relevant `todos.ever[]` item that is unresolved, vanished from `todos.current[]`, or marked complete without supporting evidence is a `P0 blocker` unless explicit user-facing evidence shows it was intentionally deferred by the user, blocked/escalated under the user's stated escalation conditions, or superseded by a later user request.
 - Changed-file scope: compare changed files/diffstat/implementation notes with the semantic user request. Flag files missing from the expected change surface, unrelated expansions, or changes that do not correspond to the requested OpenSpec/spec/tasks/bugfix/docs/config scope.
-- OpenSpec/archive semantics: when the user asks to implement all OpenSpec changes/spec/tasks and archive when complete, verify task completion, spec/docs updates, validation, reviewer gates when required, archive movement/removal of active change dirs, and blocker escalation for any unimplemented or unarchived change.
-- Completion verdict: do not return `on plan`, `Blocking for Acceptance: no`, or `Required Next Actions: none` unless every root-session user request, question reply, relevant `todos.ever[]` item, and changed-file expectation has matching transcript, diff, validation, archive, push, or explicit blocker/defer/supersede evidence.
+- OpenSpec/archive semantics: when the user asks to implement all OpenSpec changes/spec/tasks and archive when complete, verify task completion, spec/docs updates, validation, reviewer gates when required, archive movement/removal of active change dirs, and push evidence for every archive/push instruction. Any active/unarchived OpenSpec change, incomplete OpenSpec task, unresolved relevant historical todo, or missing push after requested archive/push is a P0 blocker unless the user explicitly changed the goal.
+- Blocker escalation semantics: when the user allows blocker escalation only after all other work is done, do not accept a broad “blocked diagnostic handoff” unless evidence shows all non-blocked OpenSpec work is complete and the remaining blocker is explicitly escalated to the user. If work remains and the main session is ending, return `blocked`, `Blocking for Acceptance: yes`, and a P0 finding to continue work rather than finalize.
+- Current-slice framing: do not split verdicts into “current slice handoff: no blocker” versus “full readiness/archive: blocked” during a final delivery review unless the root user explicitly requested a partial/intermediate stop. If the root goal remains incomplete, final response cannot proceed as acceptance-ready.
+- Completion verdict: do not return `on plan`, `minor deviations`, `Blocking for Acceptance: no`, or `Required Next Actions: none` unless every root-session user request, confirmed `requirementSignals[]` item, question reply, relevant `todos.ever[]` item, and changed-file expectation has matching transcript, diff, validation, archive, push, or explicit user-approved blocker/defer/supersede evidence.
 - Scope control: flag unapproved expansion, omitted constraints, changed-file mismatch, or work that solved a different problem.
 - Requirements and decisions: verify the session gathered or inferred enough requirements for the task scale and surfaced real blockers instead of guessing.
 - Plan and progress control: verify the plan/todo/workflow matched the task scale, was updated as reality changed, and did not skip material steps.
@@ -121,7 +125,7 @@ Escalate task scale when there is persisted data, public API, irreversible or re
 
 ## Severity Guide
 
-- `P0 blocker`: wrong goal, explicit user instruction omitted, relevant historical/current todo not completed/deferred/blocked with evidence, changed files do not cover the requested scope, unsafe or unauthorized destructive/remote action, acceptance impossible, high-risk work without any relevant validation, hidden blocker, or compaction/resume evidence showing an explicit user requirement was lost.
+- `P0 blocker`: wrong goal, explicit user instruction omitted, signaled root requirement not satisfied, relevant historical/current todo not completed/deferred/blocked with evidence, original root goal narrowed by supplied current-slice summary without later user approval, changed files do not cover the requested scope, unsafe or unauthorized destructive/remote action, acceptance impossible, high-risk work without any relevant validation, hidden blocker, or compaction/resume evidence showing an explicit user requirement was lost.
 - `P1 material`: missing requirements, risk handling, architecture, tests, reviewer gate, required compaction continuity evidence after compaction/resume, or unresolved validation failure for material/complex work; significant scope drift; likely behavioral regression.
 - `P2 minor`: low-risk process gap, weak handoff detail, inefficient routing, or missing optional evidence that does not block acceptance.
 - `P3 note`: improvement suggestion with no acceptance impact.
@@ -150,7 +154,7 @@ Return:
 - `Task Scale`: trivial | bounded | material | complex, with one-sentence rationale.
 - `Blocking for Acceptance`: yes/no.
 - `Findings`: ordered by severity; fields: `Severity`, `Evidence`, `Evidence Type`, `Impact`, `Likely Root Cause`, `Recommendation`, `Confidence`, `Needs external reviewer`.
-- `Requirement Completion Matrix`: user request, question reply, relevant `todos.ever[]` item, changed-file expectation, or acceptance point -> status -> evidence/gap.
+- `Requirement Completion Matrix`: user request, `requirementSignals[]` item, question reply, relevant `todos.ever[]` item, changed-file expectation, or acceptance point -> status -> evidence/gap.
 - `Process Control Matrix`: goal, requirements, plan/progress, resources/routing, architecture/approach, decomposition/parallelization, risks, compaction continuity, implementation, validation, review loop, handoff -> adequate/missing/not applicable -> evidence/gap.
 - `Evidence Reviewed`: transcript sections, changed files, validation outputs, reviewer outputs, or supplied summaries used.
 - `Required Next Actions`: exact fixes or evidence needed before acceptance, or `none`.

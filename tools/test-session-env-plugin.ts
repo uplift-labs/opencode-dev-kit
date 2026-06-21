@@ -127,8 +127,8 @@ function createDeliveryContextDbWithTodoHistory(dbPath: string, rawSessionId: st
       "create table event (id text primary key, session_id text not null, time_created integer, type text, properties text);",
     ].join("\n"));
     db.prepare("insert into session (id, time_created, time_updated) values (?, ?, ?)").run(rawSessionId, 1700000000000, 1700000009000);
-    db.prepare("insert into session_input (id, session_id, prompt, time_created) values (?, ?, ?, ?)").run("input-history", rawSessionId, `implement all OpenSpec changes then archive blockers ${rawSessionId}`, 1700000000001);
-    db.prepare("insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)").run("message-history", rawSessionId, 1700000000002, JSON.stringify({ role: "user", content: `finish every relevant task ${rawSessionId}` }));
+    db.prepare("insert into session_input (id, session_id, prompt, time_created) values (?, ?, ?, ?)").run("input-history", rawSessionId, `Реализуй все OpenSpec Changes в полном объеме. Как закончишь - заархивируй. Каждый раз когда архивируешь - пушь в гит. Если встретишь блокеры, которые вообще никак не сможешь решить сам - эскалируй, но только в случае если вообще вся другая работа во всех Changes сделана. Если тебе нужно будет создать новый Change по какой-то причине - сначала согласуй это со мной и только потом приступай к реализации. ${rawSessionId}`, 1700000000001);
+    db.prepare("insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)").run("message-history", rawSessionId, 1700000000002, JSON.stringify({ role: "user", content: `запушь все ${rawSessionId}` }));
     db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run("todo-call-1", "message-history", rawSessionId, 1700000000003, 1700000000004, JSON.stringify({
       type: "tool",
       tool: "todowrite",
@@ -209,6 +209,39 @@ function createDeliveryContextDbWithTodoPriorityChange(dbPath: string, rawSessio
   }
 }
 
+function createDeliveryContextDbWithPromptOnly(dbPath: string, rawSessionId: string, prompt: string): void {
+  const db = new DatabaseSync(dbPath);
+  try {
+    db.exec([
+      "create table session (id text primary key, time_created integer, time_updated integer);",
+      "create table message (id text primary key, session_id text not null, time_created integer, data text);",
+      "create table todo (session_id text not null, content text, status text, priority text, position integer, time_created integer, time_updated integer);",
+      "create table event (id text primary key, session_id text not null, time_created integer, type text, properties text);",
+    ].join("\n"));
+    db.prepare("insert into session (id, time_created, time_updated) values (?, ?, ?)").run(rawSessionId, 1700000000000, 1700000001000);
+    db.prepare("insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)").run("message-prompt-only", rawSessionId, 1700000000001, JSON.stringify({ role: "user", content: prompt }));
+  } finally {
+    db.close();
+  }
+}
+
+async function readDeliveryContextOutput(dataDir: string, rawSessionId: string): Promise<string> {
+  const hooks = await plugin.server({} as never);
+  const result = await hooks.tool?.[SESSION_DELIVERY_CONTEXT_TOOL]?.execute({}, {
+    abort: new AbortController().signal,
+    agent: SESSION_DELIVERY_REVIEWER_AGENT,
+    ask: async () => undefined,
+    directory: dataDir,
+    messageID: "message_fixture",
+    metadata: () => { /* ignore */ },
+    sessionID: rawSessionId,
+    worktree: dataDir,
+  });
+  const output = typeof result === "string" ? result : result?.output;
+  assert(typeof output === "string", "Custom tool should return JSON output string.");
+  return output;
+}
+
 const tests: TestCase[] = [
   {
     name: "exposes canonical object-form server plugin shape",
@@ -258,6 +291,7 @@ const tests: TestCase[] = [
           worktree: dataDir,
         });
         const output = typeof result === "string" ? result : result?.output;
+        const resultMetadata = typeof result === "string" ? null : result?.metadata as Record<string, unknown> | undefined;
         assert(typeof output === "string", "Custom tool should return JSON output string.");
         const parsed = JSON.parse(output) as { questionReplies?: unknown[]; session?: { counts?: Record<string, number>; sessionRef?: string }; todos?: { open?: unknown[]; unresolved?: unknown[] }; userMessages?: unknown[] };
         assert(parsed.session?.counts?.openTodos === 1, `Custom tool should report open todo, got ${output}`);
@@ -265,6 +299,15 @@ const tests: TestCase[] = [
         assert(parsed.session?.counts?.userMessages === 2, `Custom tool should report user messages, got ${output}`);
         assert(parsed.questionReplies?.length === 1, `Custom tool should report question reply, got ${output}`);
         assert(metadataCalls.length === 1, "Custom tool should publish metadata once.");
+        const metadataCall = metadataCalls[0] as { metadata?: Record<string, unknown> };
+        assert(metadataCall.metadata?.userMessages === 2, `Custom tool card metadata should report user messages, got ${JSON.stringify(metadataCalls)}`);
+        assert(metadataCall.metadata?.permissionReplies === 0, `Custom tool card metadata should report permission replies, got ${JSON.stringify(metadataCalls)}`);
+        assert(metadataCall.metadata?.questionReplies === 1, `Custom tool card metadata should report question replies, got ${JSON.stringify(metadataCalls)}`);
+        assert(metadataCall.metadata?.requirementSignals === 0, `Custom tool card metadata should report requirement signals, got ${JSON.stringify(metadataCalls)}`);
+        assert(resultMetadata?.userMessages === 2, `Custom tool result metadata should report user messages, got ${JSON.stringify(resultMetadata)}`);
+        assert(resultMetadata?.permissionReplies === 0, `Custom tool result metadata should report permission replies, got ${JSON.stringify(resultMetadata)}`);
+        assert(resultMetadata?.questionReplies === 1, `Custom tool result metadata should report question replies, got ${JSON.stringify(resultMetadata)}`);
+        assert(resultMetadata?.requirementSignals === 0, `Custom tool result metadata should report requirement signals, got ${JSON.stringify(resultMetadata)}`);
         assert(!output.includes(rawSessionId), "Custom tool output must redact raw session id.");
       } finally {
         if (previousDataDir == null) {
@@ -408,12 +451,17 @@ const tests: TestCase[] = [
         });
         const output = typeof result === "string" ? result : result?.output;
         assert(typeof output === "string", "Custom tool should return JSON output string.");
-        const parsed = JSON.parse(output) as { session?: { counts?: Record<string, number> }; todos?: { current?: Array<{ content?: string }>; ever?: Array<{ content?: string; status?: string }>; history?: { toolCalls?: number; available?: boolean }; unresolved?: Array<{ content?: string; status?: string }> }; warnings?: unknown[] };
+        const parsed = JSON.parse(output) as { requirementSignals?: Array<{ kind?: string }>; session?: { counts?: Record<string, number> }; todos?: { current?: Array<{ content?: string }>; ever?: Array<{ content?: string; status?: string }>; history?: { toolCalls?: number; available?: boolean }; unresolved?: Array<{ content?: string; status?: string }> }; warnings?: unknown[] };
         assert(parsed.todos?.history?.available === true, `Custom tool should mark todowrite history as available, got ${output}`);
         assert(parsed.todos?.history?.toolCalls === 2, `Custom tool should count todowrite calls, got ${output}`);
         assert(parsed.session?.counts?.currentTodos === 2, `Custom tool should keep current snapshot count, got ${output}`);
         assert(parsed.session?.counts?.everTodos === 3, `Custom tool should reconstruct historical todo count, got ${output}`);
         assert(parsed.session?.counts?.unresolvedTodos === 2, `Custom tool should report unresolved historical todos, got ${output}`);
+        assert(parsed.session?.counts?.requirementSignals === 6, `Custom tool should detect root requirement signals, got ${output}`);
+        const requirementKinds = new Set((parsed.requirementSignals ?? []).map((signal) => signal.kind));
+        for (const kind of ["archive_when_complete", "blocker_escalation_gate", "new_change_approval_required", "openspec_all_changes", "push_after_archive", "push_all"]) {
+          assert(requirementKinds.has(kind), `Requirement signal ${kind} missing, got ${output}`);
+        }
         assert(parsed.todos?.current?.some((todo) => (todo.content ?? "").includes("Archive OpenSpec changes")) !== true, `Current snapshot should not contain replaced parent todo in fixture, got ${output}`);
         assert(parsed.todos?.ever?.some((todo) => (todo.content ?? "").includes("Archive OpenSpec changes")) === true, `Historical todo should be retained from todowrite history, got ${output}`);
         assert(parsed.todos?.unresolved?.some((todo) => (todo.content ?? "").includes("Archive OpenSpec changes") && todo.status === "pending") === true, `Replaced unfinished todo should remain unresolved, got ${output}`);
@@ -456,6 +504,95 @@ const tests: TestCase[] = [
         assert(!output.includes(rawSessionId), "Custom tool output must redact raw session id.");
         assert(!output.includes("session_unrelated_secret"), "Custom tool output must redact unrelated session-like ids.");
         assert(!output.includes("session_deadbeefcafe"), "Custom tool output must redact hex-shaped session-like ids.");
+      } finally {
+        if (previousDataDir == null) {
+          delete process.env.OPENCODE_DATA_DIR;
+        } else {
+          process.env.OPENCODE_DATA_DIR = previousDataDir;
+        }
+      }
+    }),
+  },
+  {
+    name: "session delivery context custom tool filters negated requirement signals",
+    run: async () => withTempDataDir("tool-requirement-negation", async (dataDir) => {
+      const rawSessionId = "session_negation_secret";
+      createDeliveryContextDbWithPromptOnly(path.join(dataDir, "opencode.db"), rawSessionId, "Do not implement all OpenSpec changes. Do not archive when complete. Do not push all. Do not escalate blockers.");
+      const previousDataDir = process.env.OPENCODE_DATA_DIR;
+      process.env.OPENCODE_DATA_DIR = dataDir;
+      try {
+        const output = await readDeliveryContextOutput(dataDir, rawSessionId);
+        const parsed = JSON.parse(output) as { requirementSignals?: unknown[]; session?: { counts?: Record<string, number> } };
+        assert(parsed.session?.counts?.requirementSignals === 0, `Negated requirement phrases must not emit requirement signals, got ${output}`);
+        assert(parsed.requirementSignals?.length === 0, `Negated requirement phrases must not emit requirement signal objects, got ${output}`);
+      } finally {
+        if (previousDataDir == null) {
+          delete process.env.OPENCODE_DATA_DIR;
+        } else {
+          process.env.OPENCODE_DATA_DIR = previousDataDir;
+        }
+      }
+    }),
+  },
+  {
+    name: "session delivery context custom tool handles mixed negated requirement signals",
+    run: async () => withTempDataDir("tool-requirement-mixed-negation", async (dataDir) => {
+      const archiveNoPushSessionId = "session_no_push_secret";
+      createDeliveryContextDbWithPromptOnly(path.join(dataDir, "opencode.db"), archiveNoPushSessionId, "Archive when complete, but do not push.");
+      const previousDataDir = process.env.OPENCODE_DATA_DIR;
+      process.env.OPENCODE_DATA_DIR = dataDir;
+      try {
+        const noPushOutput = await readDeliveryContextOutput(dataDir, archiveNoPushSessionId);
+        const noPushParsed = JSON.parse(noPushOutput) as { requirementSignals?: Array<{ kind?: string }> };
+        const noPushKinds = new Set((noPushParsed.requirementSignals ?? []).map((signal) => signal.kind));
+        assert(noPushKinds.has("archive_when_complete"), `Archive signal should remain positive, got ${noPushOutput}`);
+        assert(!noPushKinds.has("push_after_archive"), `Negated push inside archive span must not emit push_after_archive, got ${noPushOutput}`);
+      } finally {
+        if (previousDataDir == null) {
+          delete process.env.OPENCODE_DATA_DIR;
+        } else {
+          process.env.OPENCODE_DATA_DIR = previousDataDir;
+        }
+      }
+    }),
+  },
+  {
+    name: "session delivery context custom tool keeps later affirmative requirement signals",
+    run: async () => withTempDataDir("tool-requirement-later-affirmative", async (dataDir) => {
+      const rawSessionId = "session_later_affirmative_secret";
+      createDeliveryContextDbWithPromptOnly(path.join(dataDir, "opencode.db"), rawSessionId, "Do not push all; now push all.");
+      const previousDataDir = process.env.OPENCODE_DATA_DIR;
+      process.env.OPENCODE_DATA_DIR = dataDir;
+      try {
+        const output = await readDeliveryContextOutput(dataDir, rawSessionId);
+        const parsed = JSON.parse(output) as { requirementSignals?: Array<{ kind?: string }>; session?: { counts?: Record<string, number> } };
+        const requirementKinds = new Set((parsed.requirementSignals ?? []).map((signal) => signal.kind));
+        assert(requirementKinds.has("push_all"), `Later affirmative push_all signal missing, got ${output}`);
+        assert(parsed.session?.counts?.requirementSignals === 1, `Only later affirmative push_all should remain, got ${output}`);
+      } finally {
+        if (previousDataDir == null) {
+          delete process.env.OPENCODE_DATA_DIR;
+        } else {
+          process.env.OPENCODE_DATA_DIR = previousDataDir;
+        }
+      }
+    }),
+  },
+  {
+    name: "session delivery context custom tool detects affirmative requirement variants",
+    run: async () => withTempDataDir("tool-requirement-variants", async (dataDir) => {
+      const rawSessionId = "session_variants_secret";
+      createDeliveryContextDbWithPromptOnly(path.join(dataDir, "opencode.db"), rawSessionId, "Implement every OpenSpec change, then archive and push.");
+      const previousDataDir = process.env.OPENCODE_DATA_DIR;
+      process.env.OPENCODE_DATA_DIR = dataDir;
+      try {
+        const output = await readDeliveryContextOutput(dataDir, rawSessionId);
+        const parsed = JSON.parse(output) as { requirementSignals?: Array<{ kind?: string }>; session?: { counts?: Record<string, number> } };
+        const requirementKinds = new Set((parsed.requirementSignals ?? []).map((signal) => signal.kind));
+        for (const kind of ["archive_when_complete", "openspec_all_changes", "push_after_archive"]) {
+          assert(requirementKinds.has(kind), `Affirmative requirement variant signal ${kind} missing, got ${output}`);
+        }
+        assert(parsed.session?.counts?.requirementSignals === 3, `Affirmative variant should emit expected requirement signal count, got ${output}`);
       } finally {
         if (previousDataDir == null) {
           delete process.env.OPENCODE_DATA_DIR;

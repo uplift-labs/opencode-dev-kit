@@ -249,7 +249,7 @@ Routing and reviewer maps assume the default `all` install profile.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
 - Broad independent tracks -> `orchestrator` only after bounded workstreams, success criteria, and validation evidence are clear; use `implementation-worker` for bounded non-overlapping edit slices when installed. If the worker or orchestration is unavailable, keep edit-mode work serial unless equivalent scoped permissions or isolated execution are explicitly configured.
 - Bounded first-pass helper work that benefits from cheap/offline local context, such as long-context retrieval, JSON extraction, scoped review, test ideas, planning, or tool-call checks -> `qwen-local-worker` when the target machine has a configured `qwen-local` provider.
-- Session delivery-control review for historical/current todos, user prompts/question replies, changed-file scope, transcript/summary, compaction/resume continuity, and validation output -> `session-delivery-reviewer`.
+- Session delivery-control review for historical/current todos, user prompts/detected candidate requirement signals/question replies, changed-file scope, transcript/summary, compaction/resume continuity, and validation output -> `session-delivery-reviewer`.
 - Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; current-session friction notes -> `complain`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
 - Documentation review selection: use `documentation-learning-quest` for guided onboarding, `file-review-quest` for one-file block review, `documentation-hardening-loop` for non-trivial doc/spec hardening, `openspec-consistency-review` for OpenSpec synchronization, and `codebase-audit-loop` only for exhaustive codebase audits.
 - Code maintainability/readability after non-trivial implementation, refactoring, large-file navigation, duplication, DRY/SOLID/YAGNI, or design-pattern trade-off work -> `code-quality-audit`; use `code-quality-reviewer` as the read-only gate.
@@ -259,7 +259,7 @@ Routing and reviewer maps assume the default `all` install profile.
 - Instruction artifacts, skills, agents, prompts, `AGENTS.md`, and README routing -> `instruction-artifact-reviewer`.
 - Code health, maintainability, readability, file navigation, duplication, boundaries, and pragmatic refactoring -> `code-quality-reviewer`.
 - Implementation readiness, stable scope, blockers, validation path -> `implementation-readiness-reviewer`.
-- Session delivery alignment, historical/current todos, user prompts/question replies, changed-file scope, compaction continuity, proportional rigor, missed work, risks, validation/review completeness, and acceptance handoff -> `session-delivery-reviewer`.
+- Session delivery alignment, historical/current todos, user prompts/detected candidate requirement signals/question replies, changed-file scope, compaction continuity, proportional rigor, missed work, risks, validation/review completeness, and acceptance handoff -> `session-delivery-reviewer`.
 - OpenSpec/design/architecture ownership and consistency -> `openspec-architecture-reviewer`.
 - Requirements-to-tests, weak assertions, missing gates -> `test-coverage-reviewer`.
 - Config, deployment, packaging, operational safety -> `deployment-config-reviewer`.
@@ -345,12 +345,12 @@ This repository's OpenSpec guide starts at `openspec/project.md`; active changes
 - `wire-protocol-reviewer`: byte-level protocol/transport review.
 - `legacy-evidence-reviewer`: requirement/design verification against legacy evidence.
 - `legacy-client-compatibility-reviewer`: compatibility with legacy clients/tools/workflows.
-- `session-delivery-reviewer`: session delivery-control reviewer that calls `session_delivery_context` for historical/current todos, user prompts, question replies, and permission replies, then checks semantic goal alignment, changed-file scope, continuity, proportional rigor, missed work, risks, validation/review completeness, and acceptance handoff.
+- `session-delivery-reviewer`: session delivery-control reviewer that calls `session_delivery_context` for historical/current todos, user prompts, detected candidate requirement signals, question replies, and permission replies, then checks semantic goal alignment, changed-file scope, continuity, proportional rigor, missed work, risks, validation/review completeness, and acceptance handoff.
 - `instruction-artifact-reviewer`: read-only review of skills, agents, prompts, `AGENTS.md`, README routing, autonomy handoff, and safety boundaries.
 
 Project plugin behavior:
 
-- `.opencode/plugin/session-env.ts` registers the `session_delivery_context` custom tool for current-session delivery evidence, including `todowrite` history reconstructed from transcript parts, and injects `OPENCODE_SESSION_ID` into shell commands for manual CLI use. `session-delivery-reviewer` uses normal OpenCode model selection. `install:global` installs this plugin plus its `opencode-dev-kit/tools/session-delivery-context.ts` support file under the target OpenCode config directory without pruning unrelated user plugins.
+- `.opencode/plugin/session-env.ts` registers the `session_delivery_context` custom tool for current-session delivery evidence, including `todowrite` history and candidate requirement signals reconstructed from transcript parts, and injects `OPENCODE_SESSION_ID` into shell commands for manual CLI use. `session-delivery-reviewer` uses normal OpenCode model selection. `install:global` installs this plugin plus its `opencode-dev-kit/tools/session-delivery-context.ts` support file under the target OpenCode config directory without pruning unrelated user plugins.
 
 ## Instruction Templates
 

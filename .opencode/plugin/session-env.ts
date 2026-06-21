@@ -14,7 +14,9 @@ type SessionDeliveryContextResult = {
       currentTodos: number;
       everTodos: number;
       openTodos: number;
+      permissionReplies: number;
       questionReplies: number;
+      requirementSignals: number;
       todoToolCalls: number;
       unresolvedTodos: number;
       userMessages: number;
@@ -27,6 +29,24 @@ type SessionDeliveryContextResult = {
 type SessionDeliveryContextModule = {
   readSessionDeliveryContext: (options: { resolveRoot?: boolean; sessionId: string }) => SessionDeliveryContextResult;
 };
+
+function deliveryContextMetadata(result: SessionDeliveryContextResult): Record<string, unknown> {
+  return {
+    missingSessions: result.missingSessions.length,
+    currentTodos: result.session?.counts.currentTodos ?? 0,
+    everTodos: result.session?.counts.everTodos ?? 0,
+    openTodos: result.session?.counts.openTodos ?? 0,
+    permissionReplies: result.session?.counts.permissionReplies ?? 0,
+    questionReplies: result.session?.counts.questionReplies ?? 0,
+    requirementSignals: result.session?.counts.requirementSignals ?? 0,
+    resolvedFromSessionRef: result.resolvedFromSessionRef,
+    sessionRef: result.session?.sessionRef ?? null,
+    todoToolCalls: result.session?.counts.todoToolCalls ?? 0,
+    unresolvedTodos: result.session?.counts.unresolvedTodos ?? 0,
+    userMessages: result.session?.counts.userMessages ?? 0,
+    warnings: result.warnings.length,
+  };
+}
 
 async function loadSessionDeliveryContextModule(): Promise<SessionDeliveryContextModule> {
   const pluginDir = path.dirname(fileURLToPath(import.meta.url));
@@ -57,34 +77,13 @@ export default {
         async execute(_args, context) {
           const { readSessionDeliveryContext } = await loadSessionDeliveryContextModule();
           const result = readSessionDeliveryContext({ resolveRoot: true, sessionId: context.sessionID });
+          const metadata = deliveryContextMetadata(result);
           context.metadata({
-            metadata: {
-              missingSessions: result.missingSessions.length,
-              currentTodos: result.session?.counts.currentTodos ?? 0,
-              everTodos: result.session?.counts.everTodos ?? 0,
-              openTodos: result.session?.counts.openTodos ?? 0,
-              questionReplies: result.session?.counts.questionReplies ?? 0,
-              resolvedFromSessionRef: result.resolvedFromSessionRef,
-              sessionRef: result.session?.sessionRef ?? null,
-              todoToolCalls: result.session?.counts.todoToolCalls ?? 0,
-              unresolvedTodos: result.session?.counts.unresolvedTodos ?? 0,
-              userMessages: result.session?.counts.userMessages ?? 0,
-              warnings: result.warnings.length,
-            },
+            metadata,
             title: "Session delivery context",
           });
           return {
-            metadata: {
-              missingSessions: result.missingSessions.length,
-              currentTodos: result.session?.counts.currentTodos ?? 0,
-              everTodos: result.session?.counts.everTodos ?? 0,
-              openTodos: result.session?.counts.openTodos ?? 0,
-              resolvedFromSessionRef: result.resolvedFromSessionRef,
-              sessionRef: result.session?.sessionRef ?? null,
-              todoToolCalls: result.session?.counts.todoToolCalls ?? 0,
-              unresolvedTodos: result.session?.counts.unresolvedTodos ?? 0,
-              warnings: result.warnings.length,
-            },
+            metadata,
             output: `${JSON.stringify(result, null, 2)}\n`,
             title: "Session delivery context",
           };

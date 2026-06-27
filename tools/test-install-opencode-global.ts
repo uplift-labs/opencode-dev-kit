@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -110,6 +111,17 @@ const tests: { name: string; run: () => void }[] = [
       assert(installerText.includes('"global"'), "Installer must target the global/ directory.");
       assert(installerText.includes("setx"), "Installer must use setx on Windows.");
       assert(!installerText.includes("collectDrift"), "Installer must not retain legacy copy/drift logic.");
+    },
+  },
+  {
+    name: "installer source marks provisioned config with machineOverride",
+    run: () => {
+      const installerText = fs.readFileSync(installer, "utf8") as string;
+      assert(installerText.includes("machineOverride"), "Installer must mark the provisioned local config with the machineOverride field.");
+      assert(/machineOverride:\s*true/.test(installerText), "Installer must write machineOverride: true into the provisioned local config.");
+      const provisionMatch = installerText.match(/ensureLocalConfig[\s\S]{0,1500}/);
+      assert(provisionMatch != null, "Installer must define ensureLocalConfig.");
+      assert(provisionMatch[0].includes("machineOverride"), "ensureLocalConfig must set the machineOverride marker on the provisioned local config.");
     },
   },
 ];

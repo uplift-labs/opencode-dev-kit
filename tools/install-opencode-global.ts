@@ -92,10 +92,31 @@ function ensureLocalConfig(target: string): void {
   const local = path.join(target, "opencode.json");
   const template = path.join(target, "opencode.json.template");
   if (!fs.existsSync(local) && fs.existsSync(template)) {
-    fs.copyFileSync(template, local);
+    const templateText = fs.readFileSync(template, "utf8");
+    const provisioned = writeProvisionedLocalConfig(templateText);
+    fs.writeFileSync(local, provisioned);
     console.log(`provisioned: global/opencode.json from opencode.json.template (portable default).`);
+    console.log(`Marked machineOverride: true so validators treat local provider/MCP/permission overrides as intentional.`);
     console.log(`Edit global/opencode.json for machine-specific provider/MCP overrides; it is gitignored.`);
   }
+}
+
+function writeProvisionedLocalConfig(templateText: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(templateText);
+  } catch {
+    return templateText;
+  }
+  if (typeof parsed !== "object" || parsed == null || Array.isArray(parsed)) {
+    return templateText;
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record.machineOverride === true) {
+    return templateText;
+  }
+  record.machineOverride = true;
+  return JSON.stringify(record, null, 2) + "\n";
 }
 
 function isWindows(): boolean {

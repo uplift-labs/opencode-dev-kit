@@ -58,6 +58,24 @@ Important: setting `OPENCODE_CONFIG_DIR` replaces OpenCode's entire global confi
 
 Keep project-specific skills out of `global/` unless their descriptions explicitly scope them to that project. Global skills are visible in unrelated repositories through the skill catalog, so broad or local-product triggers add avoidable routing noise.
 
+### Configuration Layering
+
+The kit uses three OpenCode config files with a documented layering:
+
+- `opencode.json` (repo root) — the workspace config. OpenCode loads this when run inside this repository. Use it for repo-local MCPs (for example the bundled `headroom` MCP) and the workspace-wide `permission: ask` policy.
+- `global/opencode.json.template` — the portable safe default that ships with the kit. It declares compaction, watcher, tool output, and `permission: ask`. Never edit this file for machine-specific overrides.
+- `global/opencode.json` — the machine-local override (gitignored). Provisioned from `global/opencode.json.template` on first install; the installer writes `machineOverride: true` into the provisioned copy so the validator treats intentional local overrides as advisory rather than as warnings.
+
+`machineOverride: true` is the contract that distinguishes "this is the kit's safe default" from "this developer explicitly accepted a permissive local rule". `npm run validate` shows overrides under `machineOverride: true` as `INFO:` notes; `npm run validate:strict` still passes. The same permission rules without the marker are emitted as `WARN:` and fail `validate:strict`.
+
+For machine-specific provider paths (for example an absolute Windows path to a local MCP binary), use the `global/opencode.local.json` overlay pattern:
+
+1. Copy `global/opencode.local.json.example` to `global/opencode.local.json` (the overlay itself is gitignored).
+2. Add the machine-local provider, MCP, or permission rules to the overlay file.
+3. Keep the marker `machineOverride: true` on `global/opencode.json`; the validator treats the combined intent as an explicit local override.
+
+The overlay pattern is best-effort: if a future OpenCode version rejects the overlay, recreate it from the example and re-apply local edits.
+
 ## Bootstrap A Project
 
 Preview the files that would connect a target project to the Universal Development Loop:

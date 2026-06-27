@@ -30,6 +30,7 @@ type Options = {
 
 const errors: string[] = [];
 const warnings: string[] = [];
+const infos: string[] = [];
 const forbiddenCodeExtensions = new Set([".cjs", ".js", ".mjs", ".ps1", ".psd1", ".psm1", ".py", ".pyw"]);
 const mutationCapablePermissionKeys = new Set(["bash", "edit", "task", "external_directory"]);
 const implementationWorkerFile = "implementation-worker.md";
@@ -117,6 +118,17 @@ function addError(message: string): void {
 
 function addWarning(message: string): void {
   warnings.push(message);
+}
+
+function addInfo(message: string): void {
+  infos.push(message);
+}
+
+function hasMachineOverride(config: unknown): boolean {
+  if (!isPlainRecord(config)) {
+    return false;
+  }
+  return config.machineOverride === true;
 }
 
 function defaultRoot(): string {
@@ -1214,23 +1226,27 @@ function validateOpenCodePermissionRules(config: unknown, file: string): void {
   if (!isPlainRecord(config)) {
     return;
   }
+  const machineOverride = hasMachineOverride(config);
+  const notePermission = machineOverride
+    ? (message: string): void => { addInfo(message); }
+    : (message: string): void => { addWarning(message); };
   const permission = config.permission;
   if (permission === "allow") {
-    addWarning(`OpenCode permission config uses top-level allow; this allows all tools by default: ${file}`);
+    notePermission(`OpenCode permission config uses top-level allow; this allows all tools by default: ${file}`);
     return;
   }
   if (!isPlainRecord(permission)) {
     return;
   }
   if (permission["*"] === "allow") {
-    addWarning(`OpenCode permission config permission.* uses wildcard allow; all otherwise-unmatched tools are allowed: ${file}`);
+    notePermission(`OpenCode permission config permission.* uses wildcard allow; all otherwise-unmatched tools are allowed: ${file}`);
   }
   for (const [permissionKey, value] of Object.entries(permission)) {
     if (!mutationCapablePermissionKeys.has(permissionKey)) {
       continue;
     }
     if (value === "allow") {
-      addWarning(`OpenCode permission config permission.${permissionKey} uses tool-wide allow; unmatched operations are allowed: ${file}`);
+      notePermission(`OpenCode permission config permission.${permissionKey} uses tool-wide allow; unmatched operations are allowed: ${file}`);
       continue;
     }
     if (!isPlainRecord(value)) {
@@ -1243,11 +1259,11 @@ function validateOpenCodePermissionRules(config: unknown, file: string): void {
     }
     const protectiveIndex = entries.findIndex(([pattern, action]) => pattern !== "*" && (action === "ask" || action === "deny"));
     if (protectiveIndex < 0) {
-      addWarning(`OpenCode permission config permission.${permissionKey} uses wildcard allow; unmatched operations are allowed: ${file}`);
+      notePermission(`OpenCode permission config permission.${permissionKey} uses wildcard allow; unmatched operations are allowed: ${file}`);
     } else if (wildcardAllowIndex > protectiveIndex) {
-      addWarning(`OpenCode permission config permission.${permissionKey} places wildcard allow after narrower ask/deny rules; last matching permission rule can override protections: ${file}`);
+      notePermission(`OpenCode permission config permission.${permissionKey} places wildcard allow after narrower ask/deny rules; last matching permission rule can override protections: ${file}`);
     } else {
-      addWarning(`OpenCode permission config permission.${permissionKey} uses wildcard allow with narrower ask/deny rules; unmatched operations are allowed: ${file}`);
+      notePermission(`OpenCode permission config permission.${permissionKey} uses wildcard allow with narrower ask/deny rules; unmatched operations are allowed: ${file}`);
     }
   }
 }
@@ -1426,6 +1442,10 @@ function main(): void {
     console.log(`WARN: ${warning}`);
   }
 
+  for (const info of infos) {
+    console.log(`INFO: ${info}`);
+  }
+
   if (options.failOnWarnings && warnings.length > 0) {
     addError(`Warnings are not allowed in strict validation mode: ${warnings.length} warning(s).`);
   }
@@ -1437,7 +1457,7 @@ function main(): void {
     process.exit(1);
   }
 
-  console.log(`OK: skills=${skillNames.length} agents=${agentNames.length} markdown=${markdownFiles.length} warnings=${warnings.length}`);
+  console.log(`OK: skills=${skillNames.length} agents=${agentNames.length} markdown=${markdownFiles.length} warnings=${warnings.length} infos=${infos.length}`);
 }
 
 try {

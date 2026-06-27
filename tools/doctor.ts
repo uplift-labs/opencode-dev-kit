@@ -135,6 +135,34 @@ function buildReport(project: string, showProject: boolean): DoctorReport {
   const opencodeConfig = path.join(project, "opencode.json");
   addCheck(checks, "project opencode config", fs.existsSync(opencodeConfig) ? "pass" : "warn", "Project opencode.json is optional but recommended for explicit instructions/config.");
 
+  const globalConfigDir = process.env.OPENCODE_CONFIG_DIR;
+  if (globalConfigDir == null || globalConfigDir.trim() === "") {
+    addCheck(checks, "opencode config layering", "warn", "OPENCODE_CONFIG_DIR is not set; install with npm run install:global so the kit becomes the active global config directory.");
+  } else {
+    const resolvedGlobalDir = path.resolve(globalConfigDir);
+    const isRepoGlobal = resolvedGlobalDir === path.resolve(root, "global");
+    const templatePath = path.join(resolvedGlobalDir, "opencode.json.template");
+    const localPath = path.join(resolvedGlobalDir, "opencode.json");
+    if (!fs.existsSync(templatePath)) {
+      addCheck(checks, "opencode config layering", "blocked", `OPENCODE_CONFIG_DIR=${resolvedGlobalDir} is missing opencode.json.template; expected the repo global/ directory.`);
+    } else if (!isRepoGlobal) {
+      addCheck(checks, "opencode config layering", "warn", `OPENCODE_CONFIG_DIR=${resolvedGlobalDir} does not point at the repo global/ directory; the kit's portable default will not be active.`);
+    } else if (fs.existsSync(localPath)) {
+      let marker = false;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(localPath, "utf8")) as { machineOverride?: unknown };
+        marker = parsed.machineOverride === true;
+      } catch {
+        // ignore: machineOverride downgrade is a validator concern, not a doctor gate.
+      }
+      addCheck(checks, "opencode config layering", "pass", marker
+        ? "Active layer: global/opencode.json (machineOverride: true)."
+        : "Active layer: global/opencode.json without machineOverride marker; intentional local overrides will fail validate:strict.");
+    } else {
+      addCheck(checks, "opencode config layering", "warn", "Active layer: global/opencode.json.template only (no provisioned local override yet). Run npm run install:global to provision global/opencode.json.");
+    }
+  }
+
   let status: CheckStatus = "pass";
   if (checks.some((check) => check.status === "blocked")) {
     status = "blocked";

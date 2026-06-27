@@ -1,0 +1,5 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "machineOverlay": true,
+  "_comment": "Machine-local overlay merged on top of global/opencode.json. Copy this file to global/opencode.local.json (which is gitignored) and add machine-specific provider/MCP/permission overrides. The machineOverride marker on global/opencode.json tells the validator that the resulting allow rules are intentional; without it the same rules would fail validate:strict."
+}

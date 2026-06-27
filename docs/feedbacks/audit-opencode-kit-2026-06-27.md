@@ -8,6 +8,7 @@
 - Mode: review-only
 - Evidence policy: source/tests/schema/scripts > docs/comments > user claims
 - Validation baseline: `node tools/validate-library.ts` -> `OK: skills=33 agents=15 markdown=85 warnings=1` (warning only on `global/opencode.json` permission:allow); `npm test` -> 9 test files, 54+8+…+… all PASS
+- Resolution baseline (2026-06-27): `npm run validate:strict` -> `OK: skills=33 agents=15 markdown=115 warnings=0 infos=0`; `npm test` -> all suites PASS (library=61, install-opencode=8, plus unchanged suites); `npm run openspec:validate` -> 6/6 changes PASS.
 
 ## Block Coverage Summary
 
@@ -74,12 +75,14 @@
 - Impact: cannot be reused on another machine without editing; the file is gitignored (`.gitignore` line 3) so technically not committed, but present in the working tree for one developer; if a teammate re-installs, the file is regenerated from template which does not contain the path.
 - Recommendation: split machine-local MCP provider config into `global/opencode.local.json` referenced from `.gitignore`, or document that user must overlay via `edit global/opencode.json after install:global`.
 - Confidence: high.
+- Resolution: addressed by `kit-config-hygiene`. Machine-local paths now use the `global/opencode.local.json` overlay pattern (`global/opencode.local.json.example` documents the contract; root `.gitignore` excludes the live overlay). The installer provisions `global/opencode.json` from the portable template, which contains no hardcoded paths. Resolved 2026-06-27.
 
 ### F09 [P2] `permission: allow` in installed config triggers validator warning
 - Evidence: `npm run validate` -> `WARN: OpenCode permission config uses top-level allow; this allows all tools by default: global/opencode.json`; `npm run validate:strict` exits 1 with `Warnings are not allowed in strict validation mode`.
 - Impact: strict pre-push validation fails on a warning the developer cannot easily remove because the override is the desired local UX; `permission: ask` from template vs `permission: allow` from local override diverges silently.
 - Recommendation: distinguish "portable safe defaults" warnings from "local override" warnings via a marker field, or document that `validate:strict` is intended for CI only where template config is in place.
 - Confidence: medium.
+- Resolution: addressed by `kit-config-hygiene`. `tools/install-opencode-global.ts` writes `machineOverride: true` into the provisioned `global/opencode.json`; `tools/validate-library.ts` downgrades top-level, wildcard, and tool-wide `permission: allow` warnings to `INFO:` when the marker is present and prints an `infos=…` summary. Strict mode still fails without the marker. Resolved 2026-06-27.
 
 ### F10 [P1] Universal Development Loop defined in 4 places, slightly differently
 - Evidence:
@@ -109,12 +112,14 @@
 - Impact: contributors cannot bootstrap `global/` cleanly from a fresh clone; only the working tree of one developer drives plugin dependency installation. Either the files should be tracked (currently they appear untracked) or the .gitignore is wrong.
 - Recommendation: either remove `package.json` and `package-lock.json` from `global/.gitignore`, or move dependency declaration into the root `package.json` and delete `global/package.json`.
 - Confidence: high.
+- Resolution: rechecked on 2026-06-27 — `global/.gitignore` no longer exists in the working tree, and `git ls-files global/package.json global/package-lock.json` both return zero entries. The dependency declaration moved out of `global/` (the plugin now ships only as `global/plugin/session-env.ts`; no `global/package.json` is needed). The contradiction is moot; no follow-up required.
 
 ### F14 [P2] `global/node_modules` checked in
 - Evidence: inventory shows `global/node_modules/` populated with `@ai-sdk`, `@opencode-ai/plugin`, `effect`, `zod`, etc. Code-quality inventory lists `global/node_modules` in `Skipped Directories` rather than ignored. The repo's `.gitignore` line 1 ignores `node_modules/` at root but `global/.gitignore` line 1 also says `node_modules`. Despite both gitignores, the directories exist and contain content.
 - Impact: large repo size, dependency drift between working copies, security review burden, `npm install` ambiguity.
 - Recommendation: confirm `global/node_modules` is excluded from git index (`git ls-files global/node_modules | wc -l` should be 0); if it is tracked, run `git rm -r --cached global/node_modules`; if it is untracked but blocking CI, document a single bootstrap command.
 - Confidence: medium (need `git ls-files` to confirm tracked status).
+- Resolution: rechecked on 2026-06-27 — `git ls-files global/node_modules | wc -l` returns 0; the directory is not tracked. With F13's dependency declaration removed from `global/`, the directory is not produced by the kit's bootstrap either. Resolved without further action.
 
 ### F15 [P2] OpenSpec workflow advertised but not actively used in repo
 - Evidence: `openspec/project.md` (5 lines), no `openspec/changes/`, no `openspec/specs/`. Validator `validateProfiles` and `validateOpenCodeConfigFiles` work fine without it, but `tools/openspec-operation-gate.ts` defines 8 operations (`propose`, `apply`, `task-update`, `review`, `acceptance`, `archive`, `post-archive`, `prepush`) used only against hypothetical changes; `pre-push-validate.ts` adds OpenSpec prepush gate only when `openspec/` exists (lines 56-62 of `pre-push-validate.ts`).
@@ -190,7 +195,7 @@
 | D01 | `docs/universal-development-loop.md` vs `instructions/universal-development-loop.md` vs `templates/project/AGENTS.md` vs `instructions/reusable-project-agent-instructions.md` | overlapping responsibility | keep canonical in `instructions/`, replace others with reference | validate-library should detect duplicate step lists |
 | D02 | 14 reviewer agent bodies | duplicated Leaf Contract / Feedback Ledger / Prevention Feedback blocks | reference `instructions/leaf-reviewer-agent-contract.md` | validator already checks tokens; tighten to reference form |
 | D03 | `docs/feedbacks/README.md` vs `templates/project/docs/feedbacks/README.md` | near duplicate | one source; template copies at bootstrap | init-project already reads from template; align with kit |
-| D04 | `global/opencode.json` vs `global/opencode.json.template` vs root `opencode.json` | three config files | document the layering clearly; root = repo workspace; global/opencode.json.template = portable default; global/opencode.json = machine override (gitignored) | validator should allow `permission: allow` only with explicit override marker |
+| D04 | `global/opencode.json` vs `global/opencode.json.template` vs root `opencode.json` | three config files | document the layering clearly; root = repo workspace; global/opencode.json.template = portable default; global/opencode.json = machine override (gitignored) | validator should allow `permission: allow` only with explicit override marker | Resolved 2026-06-27: layering documented in `README.md` -> "Configuration Layering" and `openspec/project.md`; installer writes `machineOverride: true` into the provisioned local config; validator downgrades `permission: allow` under the marker to `INFO:`; strict mode still fails without the marker. `tools/doctor.ts` reports the active layer. |
 | D05 | 9 `tools/test-*.ts` files each re-implement TestCase / assert / withTempDir | redundant wrapper code | replace with `node --test`; keep suite-specific helpers thin | count: 9 files, ~3500 lines |
 | D06 | Hand-rolled JSONC parser vs `jsonc-parser` package | reinvented dependency | adopt `jsonc-parser` | covered by unit test |
 | D07 | Frontmatter parser in `validate-library.ts` vs js-yaml/zod alternatives | reinvented dependency | consider adopting `js-yaml` or `zod` for `name`, `description` only | covered by validator tests |

@@ -344,8 +344,29 @@ function invokeInitProject(args: string[]): ProcessResult {
   return invokeProcessCapture("node", [initProject, ...args], root);
 }
 
-function invokeDoctor(args: string[]): ProcessResult {
-  return invokeProcessCapture("node", [doctor, ...args], root);
+function invokeDoctor(args: string[], envOverride?: Record<string, string | undefined>): ProcessResult {
+  if (envOverride == null) {
+    return invokeProcessCapture("node", [doctor, ...args], root);
+  }
+  const env = { ...process.env, ...envOverride };
+  for (const [key, value] of Object.entries(envOverride)) {
+    if (value === undefined) {
+      delete (env as Record<string, string | undefined>)[key];
+    }
+  }
+  const result = spawnSync("node", [doctor, ...args], {
+    cwd: root,
+    encoding: "utf8",
+    shell: false,
+    env,
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  return {
+    exitCode: result.status ?? 0,
+    output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+  };
 }
 
 function invokeProjectInventory(args: string[]): ProcessResult {
@@ -1492,6 +1513,110 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "validator downgrades top-level permission allow under machineOverride",
+    run: () => {
+      const fixture = newLibraryFixture("machine-override-top-allow");
+      writeText(path.join(fixture, "opencode.jsonc"), lines([
+        "{",
+        "  \"$schema\": \"https://opencode.ai/config.json\",",
+        "  \"machineOverride\": true,",
+        "  \"permission\": \"allow\"",
+        "}",
+      ]));
+      const result = invokeValidator(fixture);
+      assertSuccess(result, "machineOverride + permission: allow should not warn.");
+      assertOutputContains(result, "INFO:", "machineOverride + permission: allow should emit an info note.");
+      assertOutputExcludes(result, "WARN: OpenCode permission config uses top-level allow", "machineOverride should not emit a WARN for top-level allow.");
+    },
+  },
+  {
+    name: "validator downgrades wildcard permission allow under machineOverride",
+    run: () => {
+      const fixture = newLibraryFixture("machine-override-wildcard-allow");
+      writeText(path.join(fixture, "opencode.jsonc"), lines([
+        "{",
+        "  \"$schema\": \"https://opencode.ai/config.json\",",
+        "  \"machineOverride\": true,",
+        "  \"permission\": {",
+        "    \"*\": \"allow\",",
+        "    \"bash\": {",
+        "      \"*\": \"allow\"",
+        "    }",
+        "  }",
+        "}",
+      ]));
+      const result = invokeValidator(fixture);
+      assertSuccess(result, "machineOverride + wildcard permission allow should not warn.");
+      assertOutputContains(result, "INFO:", "machineOverride + wildcard allow should emit info notes.");
+      assertOutputExcludes(result, "WARN: OpenCode permission config", "machineOverride should not emit WARN for wildcard allow.");
+    },
+  },
+  {
+    name: "validator strict mode passes for machineOverride + permission allow",
+    run: () => {
+      const fixture = newLibraryFixture("machine-override-strict");
+      writeText(path.join(fixture, "opencode.jsonc"), lines([
+        "{",
+        "  \"$schema\": \"https://opencode.ai/config.json\",",
+        "  \"machineOverride\": true,",
+        "  \"permission\": \"allow\"",
+        "}",
+      ]));
+      const result = invokeProcessCapture("node", [validator, "--root", fixture, "--fail-on-warnings"], root);
+      assertSuccess(result, "Strict mode should pass with machineOverride + permission: allow.");
+    },
+  },
+  {
+    name: "validator strict mode fails for top-level permission allow without machineOverride",
+    run: () => {
+      const fixture = newLibraryFixture("permission-allow-no-override-strict");
+      writeText(path.join(fixture, "opencode.jsonc"), lines([
+        "{",
+        "  \"$schema\": \"https://opencode.ai/config.json\",",
+        "  \"permission\": \"allow\"",
+        "}",
+      ]));
+      const result = invokeProcessCapture("node", [validator, "--root", fixture, "--fail-on-warnings"], root);
+      assertFailure(result, "Strict mode should fail for permission: allow without machineOverride.");
+      assertOutputContains(result, "OpenCode permission config uses top-level allow", "Validator should warn about top-level allow when marker is absent.");
+    },
+  },
+  {
+    name: "validator strict mode fails for wildcard permission allow without machineOverride",
+    run: () => {
+      const fixture = newLibraryFixture("permission-wildcard-no-override-strict");
+      writeText(path.join(fixture, "opencode.jsonc"), lines([
+        "{",
+        "  \"$schema\": \"https://opencode.ai/config.json\",",
+        "  \"permission\": {",
+        "    \"*\": \"allow\",",
+        "    \"bash\": {",
+        "      \"*\": \"allow\"",
+        "    }",
+        "  }",
+        "}",
+      ]));
+      const result = invokeProcessCapture("node", [validator, "--root", fixture, "--fail-on-warnings"], root);
+      assertFailure(result, "Strict mode should fail for wildcard permission allow without machineOverride.");
+    },
+  },
+  {
+    name: "validator reports info count in summary",
+    run: () => {
+      const fixture = newLibraryFixture("machine-override-summary");
+      writeText(path.join(fixture, "opencode.jsonc"), lines([
+        "{",
+        "  \"$schema\": \"https://opencode.ai/config.json\",",
+        "  \"machineOverride\": true,",
+        "  \"permission\": \"allow\"",
+        "}",
+      ]));
+      const result = invokeValidator(fixture);
+      assertSuccess(result, "machineOverride + permission: allow should pass validation.");
+      assertOutputContains(result, "infos=", "Validator summary should report info count.");
+    },
+  },
+  {
     name: "validator rejects unterminated JSONC comments",
     run: () => {
       const fixture = newLibraryFixture("unterminated-jsonc-comment");
@@ -1620,11 +1745,17 @@ const tests: TestCase[] = [
     run: () => {
       const project = newTempDir("doctor-project");
       assertSuccess(invokeInitProject(["--target", project, "--mode", "write"]), "Bootstrap should prepare the doctor fixture.");
-      const result = invokeDoctor(["--project", project, "--format", "json"]);
+      const repoGlobalDir = path.join(root, "global");
+      const result = invokeDoctor(["--project", project, "--format", "json"], { OPENCODE_CONFIG_DIR: repoGlobalDir });
       assertSuccess(result, "Doctor should pass for a bootstrapped project.");
       const report = asRecord(parseJsonOutput(result), "Doctor JSON root should be an object.");
-      assertEqual(report.status, "pass", "Doctor should report pass for a bootstrapped project.");
       assertEqual(report.project, "<redacted>", "Doctor should redact project paths by default.");
+      const checks = asArray(report.checks, "Doctor checks should be an array.");
+      const projectChecks = checks.filter((check) => !check.name.startsWith("opencode config layering"));
+      const projectFails = projectChecks.filter((check) => check.status !== "pass");
+      if (projectFails.length > 0) {
+        throw new Error(`All non-layering project checks should pass for a bootstrapped project.\nFailures:\n${JSON.stringify(projectFails, null, 2)}`);
+      }
     },
   },
   {
@@ -1642,6 +1773,21 @@ const tests: TestCase[] = [
       assertEqual(adapterCheck.status, "warn", "Doctor should warn when project adapter is missing.");
       const feedbackCheck = findBucket(checks, "name", "project feedback ledger");
       assertEqual(feedbackCheck.status, "warn", "Doctor should warn when project feedback ledger is missing.");
+    },
+  },
+  {
+    name: "doctor surfaces opencode config layering state",
+    run: () => {
+      const project = newTempDir("doctor-layering-project");
+      const result = invokeDoctor(["--project", project, "--format", "json"]);
+      assertSuccess(result, "Doctor should run for layering check.");
+      const report = asRecord(parseJsonOutput(result), "Doctor JSON root should be an object.");
+      const checks = asArray(report.checks, "Doctor checks should be an array.");
+      const layerCheck = findBucket(checks, "name", "opencode config layering");
+      assertEqual(layerCheck.status, "warn", "Layering check should warn when OPENCODE_CONFIG_DIR is unset.");
+      if (!String(layerCheck.detail).includes("OPENCODE_CONFIG_DIR")) {
+        throw new Error(`Layering detail should mention OPENCODE_CONFIG_DIR; got: ${layerCheck.detail}`);
+      }
     },
   },
   {

@@ -4,6 +4,16 @@ This repository uses OpenSpec changes for durable follow-up work that affects re
 
 OpenSpec archive does not require a separate learning file or archive-time process gate. Archive readiness is based on completed scoped tasks, synchronized specs, validation evidence, reviewer evidence when risk warrants it, and explicit handling of unresolved blockers or follow-ups.
 
+## Configuration Layering
+
+The kit ships three OpenCode config files with a documented layering (see `README.md` -> "Configuration Layering" for the full contract):
+
+- `opencode.json` (repo root) — workspace config loaded when running OpenCode in this repository.
+- `global/opencode.json.template` — portable safe default committed with the kit.
+- `global/opencode.json` — machine-local override (gitignored); the installer writes `machineOverride: true` into the provisioned copy so intentional local permission/provider overrides pass strict validation as info notes.
+
+`global/opencode.local.json` is the documented overlay pattern for machine-specific paths; it is gitignored next to `global/opencode.json`.
+
 ## Active Execution Plan
 
 The full audit ledger at `docs/feedbacks/audit-opencode-kit-2026-06-27.md` (commit `1af6e5b`) splits the audit findings into six independent OpenSpec changes. The recommended execution is wave-based:

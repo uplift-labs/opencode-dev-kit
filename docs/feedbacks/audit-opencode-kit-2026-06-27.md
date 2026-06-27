@@ -91,18 +91,21 @@
 - Impact: edits to the loop require touching 4 files; risk of drift; same canonical contract re-explained with slightly different wording creates ambiguity for downstream agents.
 - Recommendation: keep one canonical source (`instructions/universal-development-loop.md`) and replace other locations with a one-line "see `instructions/universal-development-loop.md`" reference; require the validator to flag a step list appearing in any other instruction artifact.
 - Confidence: high.
+- Status: **Resolved** by `deduplicate-instruction-artifacts` (tasks 1.1-1.5). `instructions/universal-development-loop.md` is the single source; `docs/universal-development-loop.md`, `instructions/reusable-project-agent-instructions.md`, and `templates/project/AGENTS.md` now point at it; validator rule (`validateUniversalDevelopmentLoopSingleSource`) fails the build when the numbered step list or full arrow chain reappears in any other artifact.
 
 ### F11 [P1] Identical reviewer contract blocks repeated across 14 agents
 - Evidence: `instruction:inventory` `Repeated Lines` table shows `Prevention Feedback`, `Recurrence Path`, `Draft Rule`, `Replay Evidence`, `Actionable Continuation Items`, `Findings`, `Verdict` blocks all appear 10-14 times across reviewer agents.
 - Impact: editing the contract requires editing 14 files; risk of subtle drift that validator cannot catch.
 - Recommendation: keep one canonical `instructions/leaf-reviewer-agent-contract.md` (already exists); update reviewer agents to include "see `instructions/leaf-reviewer-agent-contract.md`" and require the validator to check the reference; consider extracting the shared YAML to a `templates/agent-reviewer-frontmatter.yml` snippet.
 - Confidence: high.
+- Status: **Resolved** by `deduplicate-instruction-artifacts` (tasks 2.1-2.15). All 14 reviewer agents plus `qwen-local-worker` and `session-delivery-reviewer` now reference `instructions/leaf-reviewer-agent-contract.md` via a `## Contract Reference` block. Validator (`validateAgents`) requires the reference and rejects any inline `## Leaf Contract` or `## Prevention Feedback` body. `instruction:inventory` confirms `Prevention Feedback`/`Recurrence Path`/`Draft Rule`/`Replay Evidence` blocks now appear only in the canonical contract file.
 
 ### F12 [P2] Two AGENTS.md files with overlapping name and intent
 - Evidence: `AGENTS.md` (77 lines, repo-library rules) and `global/AGENTS.md` (121 lines, runtime global rules). Different audiences but same filename and similar headers; `tools/validate-library.ts` requires specific sections in each independently (lines 753-794 for repo AGENTS.md; 1393-1418 for session-delivery binding in both).
 - Impact: contributor confusion; "which AGENTS.md?" question is high-frequency; risk of editing wrong file.
 - Recommendation: keep both (they serve different audiences), but rename the repo-level one to `REPO_AGENTS.md` or move its rules into `docs/curation.md` so the filename `AGENTS.md` only means "the runtime instruction file".
 - Confidence: medium.
+- Status: **Resolved** by `deduplicate-instruction-artifacts` (tasks 4.1-4.4). Repository-level file renamed to `REPO_AGENTS.md`; `validateRepoAgentsMd` enforces the rename and rejects a root-level `AGENTS.md`. `global/AGENTS.md` is unchanged and remains the only `AGENTS.md` reachable by OpenCode.
 
 ### F13 [P2] `global/.gitignore` ignores `package.json` and `package-lock.json` but `global/package.json` exists
 - Evidence: `global/.gitignore` -> `node_modules / package.json / package-lock.json / bun.lock / .gitignore`. Inventory shows `global/package.json` (5 lines, declares `@opencode-ai/plugin`) and `global/package-lock.json` (14629 lines).
@@ -175,12 +178,14 @@
 - Impact: drift between kit and template feedback contract; kit uses one template, projects get a different one.
 - Recommendation: have the template README either pull from the kit README at build time (`init-project` copies from `docs/feedbacks/README.md`) or generate a deterministic abbreviation; either way one source of truth.
 - Confidence: medium.
+- Status: **Resolved** by `deduplicate-instruction-artifacts` (tasks 3.1-3.4). `templates/project/docs/feedbacks/README.md` was deleted along with the empty `docs/` directory under `templates/project/`. `tools/init-project.ts` now reads the canonical `docs/feedbacks/README.md` from the kit root and copies it byte-for-byte into the target project; the validator rejects any reintroduction of the template README.
 
 ### F25 [P3] Permission YAML duplicated across 14 reviewer agents
 - Evidence: each reviewer agent has ~16 lines of identical YAML frontmatter (read/glob/grep allow, edit/docs/feedbacks/** allow, rest deny). 14 reviewers x ~16 lines = ~220 lines of duplicated configuration.
 - Impact: editing the permission shape (e.g. adding `lsp: deny`) requires editing 14 files; validator already enforces consistency but the duplication is the smell.
 - Recommendation: keep one `templates/agent-reviewer-frontmatter.yml` and have an `init:agent` tool that emits the block, or document that the validator generates the missing frontmatter when only key facts are provided.
 - Confidence: low.
+- Status: **Out of scope**. The frontmatter de-duplication described here requires a new `init:agent` tool plus a shared YAML snippet, which is a separate refactor change. `deduplicate-instruction-artifacts` did not touch permission YAML because the contract dedup (`instructions/leaf-reviewer-agent-contract.md`) already removes ~30 lines of duplicated body text per reviewer; permission YAML remains the smaller remaining smell and is tracked for a future change.
 
 ## Redundancy Matrix
 
@@ -246,7 +251,7 @@
 Recommended as one OpenSpec change group once the user confirms the scope:
 
 - **CHG: split-candidate refactor for tools/** — F01-F05
-- **CHG: deduplicate instruction artifacts** — F10, F11, F12, F24, F25 (D01, D02, D03, D08)
+- **CHG: deduplicate instruction artifacts** — F10, F11, F12, F24, F25 (D01, D02, D03, D08) — **resolved** by `openspec/changes/deduplicate-instruction-artifacts` for F10, F11, F12, F24 and D01/D02/D03; F25 and D08 remain for the future `init:agent` frontmatter refactor.
 - **CHG: plugin self-containment** — F07
 - **CHG: kit-local config hygiene** — F08, F09, F13, F14 (D04)
 - **CHG: add CI workflow + node:test migration** — F16, F17, D05

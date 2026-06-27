@@ -145,7 +145,7 @@ function classify(relative: string): ArtifactKind | null {
   if (/^templates\/.+\.md$/.test(relative)) {
     return "template";
   }
-  if (relative === "README.md" || relative === "AGENTS.md") {
+  if (relative === "README.md" || relative === "AGENTS.md" || relative === "REPO_AGENTS.md") {
     return "root";
   }
   return null;

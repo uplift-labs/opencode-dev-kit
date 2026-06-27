@@ -1,4 +1,6 @@
-# Repository Instructions
+# Repository Maintainer Instructions
+
+This file (`REPO_AGENTS.md`) holds contributor-facing maintenance rules for the `opencode-dev-kit` library. It is not the runtime instruction file; OpenCode loads the runtime instructions from `global/AGENTS.md` once `OPENCODE_CONFIG_DIR` points at `global/`. The two files serve different audiences and live under different filenames by design.
 
 This repository stores reusable OpenCode skills, subagents, and instruction templates.
 

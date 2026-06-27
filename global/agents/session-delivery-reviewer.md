@@ -78,13 +78,9 @@ When Session Delivery Context is available, use it to seed the requirement-signa
 - Root causes must cite evidence; use `unknown` when evidence cannot support a cause, and recommend investigation or instrumentation instead of guessing.
 - Root-session user messages, confirmed `requirementSignals[]`, and explicit `questionReplies[]` override supplied continuation summaries, assistant-written goals, or latest-slice framing. A supplied bundle may add evidence, but it must not narrow the original user goal unless a later root-session user message or user-owned question reply explicitly changed scope.
 
-## Leaf Contract
+## Contract Reference
 
-Read/search-only leaf reviewer, except feedback-ledger appends under `docs/feedbacks/**` through the `complain` skill. One custom-tool exception is allowed: `session_delivery_context` for the current session only. No source/config/instruction edits, fixes, commits/amends, merges, pushes, remote/destructive actions, shell commands, `question`, tasks, other skills, or nested agents. Stay in supplied session scope; mention adjacent process risks only when they materially affect acceptance. Missing validation, source, or reviewer evidence -> exact main-session action in `Required Next Actions`; external domain -> `Needs external reviewer: <agent-name> required|optional`.
-
-## Feedback Ledger
-
-When current-session workflow friction appears, use `complain` and append a privacy-safe entry to `docs/feedbacks/session-delivery-reviewer.md`. Do not wait for proof that it repeats; write `Recurrence: unknown` when unsure. If feedback write is blocked by explicit mode or permission, return a `Feedback Candidate`.
+This reviewer follows the shared contract defined at `instructions/leaf-reviewer-agent-contract.md` (Leaf Contract, Feedback Ledger, Evidence Rules, Severity Scale, Prevention Feedback, Output Schema). The single custom-tool exception (`session_delivery_context` for the current session) and the role-specific Adaptive Control Model, Session Delivery Context Bootstrap, and output schema below extend the shared contract without restating it.
 
 ## Adaptive Control Model
 
@@ -129,19 +125,6 @@ Escalate task scale when there is persisted data, public API, irreversible or re
 - `P1 material`: missing requirements, risk handling, architecture, tests, reviewer gate, required compaction continuity evidence after compaction/resume, or unresolved validation failure for material/complex work; significant scope drift; likely behavioral regression.
 - `P2 minor`: low-risk process gap, weak handoff detail, inefficient routing, or missing optional evidence that does not block acceptance.
 - `P3 note`: improvement suggestion with no acceptance impact.
-
-## Prevention Feedback
-
-For each P0/P1 finding with non-`unknown` `Likely Root Cause`, include `Prevention Feedback`:
-
-- `Severity`: P0 | P1.
-- `Recurrence Path`: existing instruction, skill, or agent that should have prevented recurrence, and why it missed.
-- `Prevention Target`: `AGENTS.md` | `skill:<name>` | `agent:<name>` | `new-skill-required`.
-- `Prevention Cost`: cheap | medium | expensive.
-- `Draft Rule`: proposed rule text for main-session review, not a finalized edit.
-- `Replay Evidence`: exact diff, fixture, command, or session context that should fail to reproduce after the rule is applied.
-
-For nit/P2 findings, return `Prevention Feedback: none` unless the main-session prompt explicitly asks.
 
 ## Output
 

@@ -1,22 +1,10 @@
 # Project Agent Instructions
 
-This project uses the Universal Development Loop from `opencode-dev-kit`.
+This project follows the Universal Development Loop from `opencode-dev-kit`.
 
 ## Universal Development Loop
 
-Apply the same process for every task, scaled to the size and risk of the change:
-
-1. `Intake`: clarify goal, constraints, success criteria, non-goals, and likely validation path.
-2. `Evidence`: inspect source, tests, schemas, scripts, config, generated artifacts, and live command output before trusting prose.
-3. `Baseline Proof`: reproduce or characterize current behavior before behavior changes when feasible.
-4. `Small Slice`: choose the smallest reviewable change that proves value.
-5. `Test First`: add or update a focused failing, acceptance, or characterization test before behavior-changing implementation unless infeasible.
-6. `Implement`: make the smallest correct change without unrelated cleanup or speculative abstractions.
-7. `Focused Validation`: run the nearest validation command first.
-8. `Review Gate`: use relevant read-only reviewers only when risk justifies them.
-9. `Final Validation`: broaden validation when boundaries, APIs, data, deployment, or compatibility are affected.
-10. `Handoff`: for material/complex sessions, run `session-delivery-reviewer` with bundle: goal/constraints, transcript/summary plus compaction state, files/diffstat, validation, reviewer fixes, risks. Skip only for trivial/bounded work or unavailable inputs, and report why. Treat reviewer blocking output as binding: if it returns `Blocking for Acceptance: yes`, `Verdict: blocked`, any `P0 blocker`, or non-empty `Required Next Actions`, do not present the session as complete or ready-to-land. Continue autonomous work when safe, or ask/escalate only the exact user-owned blocker; partial slice handoff must not end an unfinished root goal. Otherwise report changed files, evidence, validation, residual risks, and ready-to-land status.
-11. `Process Improvement`: capture current-session friction with `complain` in `docs/feedbacks/**`; convert accumulated patterns into helpers, validators, fixtures, reports, or templates.
+Apply the process defined at `instructions/universal-development-loop.md` to every task, scaled to the size and risk of the change. Do not restate the step list in this file.
 
 ## Project Adapter
 
@@ -39,6 +27,7 @@ Apply the same process for every task, scaled to the size and risk of the change
 - Keep implementation serial when `implementation-worker` is unavailable, scope is unclear, write targets overlap, or integration would cost more than doing the work directly.
 - Use prompt-only orchestration only for broad work with independent bounded tracks where coordinated fan-out, fan-in, validation gates, or isolation is worth the overhead.
 - Keep task tracking, integration, validation, reviewer gates, cleanup, and final synthesis in the main session.
+- Treat `session-delivery-reviewer` blocking output as binding: if it returns `Blocking for Acceptance: yes`, `Verdict: blocked`, any `P0 blocker`, or non-empty `Required Next Actions`, do not present the session as complete or ready-to-land. Continue autonomous work when safe, or ask/escalate only the exact user-owned blocker; partial slice handoff must not end an unfinished root goal.
 
 ## Quality
 

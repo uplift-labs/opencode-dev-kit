@@ -10,13 +10,12 @@ The kit optimizes one process: gather evidence, prove current state, choose the 
 
 ## Universal Development Loop
 
-The central contract is `instructions/universal-development-loop.md`:
+The central contract is the single canonical file `instructions/universal-development-loop.md`. Every other artifact in this repository and downstream projects points at that file instead of restating the step list.
 
-```text
-Intake -> Evidence -> Baseline Proof -> Small Slice -> Test First -> Implement -> Focused Validation -> Review Gate -> Final Validation -> Handoff -> Process Improvement
-```
+- Step list, Token/Time Rules, Quality Defaults, and Output Shape: `instructions/universal-development-loop.md`.
+- Kit-level pointer and policy notes: `docs/universal-development-loop.md`.
 
-Technology adapters may change commands and constraints, but not the loop.
+Technology adapters may change commands and constraints, but not the loop. Edits to the loop happen in one place; `npm run validate` enforces the single-source rule.
 
 ## Contents
 
@@ -88,6 +87,7 @@ npm run project:inventory -- --root <project-path> --format markdown
 
 ## Token Economy
 
+- The repository-level maintainer rules live in `REPO_AGENTS.md`. `global/AGENTS.md` is the runtime instruction file OpenCode loads when `OPENCODE_CONFIG_DIR` points at `global/`. Scripts that previously referenced the root `AGENTS.md` must use `REPO_AGENTS.md` instead.
 - Use the Universal Development Loop instead of choosing among competing workflows.
 - Use `project:inventory`, `code-quality:inventory`, `glob`, and `grep` before broad file reads.
 - On native Windows, use `rtk <command>` explicitly for shell-heavy read-only commands; do not rely on hook auto-rewrite.

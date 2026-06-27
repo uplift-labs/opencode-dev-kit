@@ -37,10 +37,10 @@ npm run doctor -- --project <project-path>
 
 ## First Task Prompt
 
-In the target project, ask for work using the single loop:
+In the target project, ask for work using the single loop defined at `instructions/universal-development-loop.md`:
 
 ```text
-Use the Universal Development Loop to implement <task>. Keep the slice small, prove current behavior first when feasible, work test-first for behavior changes, and run the nearest validation command.
+Use the Universal Development Loop (see instructions/universal-development-loop.md) to implement <task>. Keep the slice small, prove current behavior first when feasible, work test-first for behavior changes, and run the nearest validation command.
 ```
 
 ## Before Broad Work

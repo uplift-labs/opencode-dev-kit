@@ -124,13 +124,9 @@ function newLibraryFixture(name: string): string {
     "",
     "You are a read-only demo reviewer.",
     "",
-    "## Leaf Contract",
+    "## Contract Reference",
     "",
-    "Read/search-only leaf reviewer, except feedback-ledger appends under `docs/feedbacks/**` through the `complain` skill. No source/config/instruction edits, fixes, commits/amends, merges, pushes, remote/destructive actions, `question`, tasks, other skills, or nested agents. Stay in scope. Missing evidence -> exact main-session command/manual gate in `Actionable Continuation Items`; external domain -> `Needs external reviewer: <agent-name> required|optional`.",
-    "",
-    "## Feedback Ledger",
-    "",
-    "When current-session workflow friction appears, use `complain` and append a privacy-safe entry to `docs/feedbacks/demo-reviewer.md`.",
+    "This reviewer follows the shared contract defined at `instructions/leaf-reviewer-agent-contract.md` (Leaf Contract, Feedback Ledger, Evidence Rules, Severity Scale, Prevention Feedback, Output Schema).",
     "",
     "## Output",
     "",
@@ -169,14 +165,6 @@ function newLibraryFixture(name: string): string {
     "",
   ]));
   writeText(path.join(dir, "templates", "project", "opencode.json"), lines(["{", "  \"$schema\": \"https://opencode.ai/config.json\"", "}", ""]));
-  writeText(path.join(dir, "templates", "project", "docs", "feedbacks", "README.md"), lines([
-    "# Feedback Ledger",
-    "",
-    "Use `complain` for current-session workflow friction. If recurrence is unknown, write `Recurrence: unknown`.",
-    "",
-    "Rules: no raw private prompts, large logs, or personal blame.",
-    "",
-  ]));
   writeText(path.join(dir, "templates", "project", "validation.md"), lines(["# Project Validation", "", "- Tests before implementation when behavior changes.", ""]));
   writeText(path.join(dir, "templates", "project", "adapter.json"), lines([
     "{",
@@ -225,7 +213,7 @@ function newLibraryFixture(name: string): string {
     "}",
     "",
   ]));
-  writeText(path.join(dir, "AGENTS.md"), lines([
+  writeText(path.join(dir, "REPO_AGENTS.md"), lines([
     "# Repository Instructions",
     "",
     "## TypeScript Development",
@@ -467,7 +455,7 @@ function addImplementationWorkerFixture(fixture: string): string {
   const profile = fs.readFileSync(profilePath, "utf8");
   writeText(profilePath, profile.replace("\"demo-reviewer\"]", "\"demo-reviewer\", \"implementation-worker\"]"));
 
-  const agentsPath = path.join(fixture, "AGENTS.md");
+  const agentsPath = path.join(fixture, "REPO_AGENTS.md");
   const agents = fs.readFileSync(agentsPath, "utf8");
   writeText(agentsPath, agents.replace(
     "- The main session owns skill selection, decomposition, validation, reviewer gates, and ready-to-land handoff.",
@@ -501,7 +489,7 @@ function addSessionDeliveryBindingFixture(fixture: string): void {
   const profile = fs.readFileSync(profilePath, "utf8");
   writeText(profilePath, profile.replace('"demo-reviewer"]', '"demo-reviewer", "session-delivery-reviewer"]'));
 
-  for (const relative of ["AGENTS.md", path.join("instructions", "universal-development-loop.md"), path.join("templates", "project", "AGENTS.md")]) {
+  for (const relative of ["REPO_AGENTS.md", path.join("instructions", "universal-development-loop.md"), path.join("templates", "project", "AGENTS.md")]) {
     const file = path.join(fixture, relative);
     writeText(file, `${fs.readFileSync(file, "utf8")}\n${sessionDeliveryBindingText}\n`);
   }
@@ -513,6 +501,50 @@ const tests: TestCase[] = [
     run: () => {
       const fixture = newLibraryFixture("valid");
       assertSuccess(invokeValidator(fixture), "Valid fixture should pass validation.");
+    },
+  },
+  {
+    name: "validator rejects inline UDL step list outside canonical file",
+    run: () => {
+      const fixture = newLibraryFixture("inline-udl-step-list");
+      writeText(path.join(fixture, "templates", "project", "AGENTS.md"), lines([
+        "# Project Agent Instructions",
+        "",
+        "## Universal Development Loop",
+        "",
+        "1. `Intake`: clarify goal.",
+        "2. `Evidence`: inspect source.",
+        "3. `Baseline Proof`: reproduce or characterize current behavior before behavior changes when feasible.",
+        "4. `Small Slice`: choose the smallest reviewable change that proves value.",
+        "5. `Test First`: add or update a focused failing, acceptance, or characterization test before behavior-changing implementation.",
+        "6. `Implement`: make the smallest correct change.",
+        "7. `Focused Validation`: run the nearest validation command first.",
+        "8. `Review Gate`: use relevant read-only reviewers only when risk justifies them.",
+        "9. `Final Validation`: broaden validation when boundaries are affected.",
+        "10. `Handoff`: report changed files.",
+        "11. `Process Improvement`: capture friction with `complain`.",
+        "",
+      ]));
+      const result = invokeValidator(fixture);
+      assertFailure(result, "Inline UDL step list outside canonical file should fail validation.");
+      assertOutputContains(result, "Universal Development Loop step list must only appear in", "Validation output should name the canonical-source rule.");
+    },
+  },
+  {
+    name: "validator rejects inline UDL arrow chain outside canonical file",
+    run: () => {
+      const fixture = newLibraryFixture("inline-udl-arrow-chain");
+      writeText(path.join(fixture, "templates", "project", "AGENTS.md"), lines([
+        "# Project Agent Instructions",
+        "",
+        "## Universal Development Loop",
+        "",
+        "Intake -> Evidence -> Baseline Proof -> Small Slice -> Test First -> Implement -> Focused Validation -> Review Gate -> Final Validation -> Handoff -> Process Improvement",
+        "",
+      ]));
+      const result = invokeValidator(fixture);
+      assertFailure(result, "Inline UDL arrow chain outside canonical file should fail validation.");
+      assertOutputContains(result, "Universal Development Loop inline chain must only appear in", "Validation output should name the canonical-source rule.");
     },
   },
   {
@@ -711,13 +743,9 @@ const tests: TestCase[] = [
         "",
         "You are a read-only demo reviewer.",
         "",
-        "## Leaf Contract",
+        "## Contract Reference",
         "",
-        "Read/search-only leaf reviewer, except feedback-ledger appends under `docs/feedbacks/**` through the `complain` skill. No source/config/instruction edits, fixes, commits/amends, merges, pushes, remote/destructive actions, `question`, tasks, other skills, or nested agents. Stay in scope. Missing evidence -> exact main-session command/manual gate in `Actionable Continuation Items`; external domain -> `Needs external reviewer: <agent-name> required|optional`.",
-        "",
-        "## Feedback Ledger",
-        "",
-        "When current-session workflow friction appears, use `complain` and append a privacy-safe entry to `docs/feedbacks/demo-reviewer.md`.",
+        "This reviewer follows the shared contract defined at `instructions/leaf-reviewer-agent-contract.md` (Leaf Contract, Feedback Ledger, Evidence Rules, Severity Scale, Prevention Feedback, Output Schema).",
         "",
         "## Output",
         "",
@@ -764,13 +792,8 @@ const tests: TestCase[] = [
         "",
         "You are a read-only demo reviewer.",
         "",
-        "## Leaf Contract",
-        "",
-        "Read/search-only leaf reviewer, except feedback-ledger appends under `docs/feedbacks/**` through the `complain` skill. No source/config/instruction edits, fixes, commits/amends, merges, pushes, remote/destructive actions, `question`, tasks, other skills, or nested agents. Stay in scope. Missing evidence -> exact main-session command/manual gate in `Actionable Continuation Items`; external domain -> `Needs external reviewer: <agent-name> required|optional`.",
-        "",
-        "## Feedback Ledger",
-        "",
-        "When current-session workflow friction appears, use `complain` and append a privacy-safe entry to `docs/feedbacks/demo-reviewer.md`.",
+        "## Contract Reference",
+        "This reviewer follows the shared contract defined at `instructions/leaf-reviewer-agent-contract.md` (Leaf Contract, Feedback Ledger, Evidence Rules, Severity Scale, Prevention Feedback, Output Schema).",
         "",
         "## Output",
         "",
@@ -819,9 +842,9 @@ const tests: TestCase[] = [
         "",
         "You are a read-only demo reviewer.",
         "",
-        "## Leaf Contract",
+        "## Contract Reference",
         "",
-        "Read/search-only leaf reviewer. No edits, fixes, commits/amends, merges, pushes, remote/destructive actions, `question`, tasks, skills, or nested agents. Stay in scope. Missing evidence -> exact main-session command/manual gate in `Actionable Continuation Items`; external domain -> `Needs external reviewer: <agent-name> required|optional`.",
+        "This reviewer follows the shared contract defined at `instructions/leaf-reviewer-agent-contract.md` (Leaf Contract, Feedback Ledger, Evidence Rules, Severity Scale, Prevention Feedback, Output Schema).",
         "",
         "## Output",
         "",
@@ -953,7 +976,7 @@ const tests: TestCase[] = [
       const fixture = newLibraryFixture("session-delivery-binding-handoff");
       addSessionDeliveryBindingFixture(fixture);
       assertSuccess(invokeValidator(fixture), "Session delivery binding fixture should pass before token removal.");
-      const agentsPath = path.join(fixture, "AGENTS.md");
+      const agentsPath = path.join(fixture, "REPO_AGENTS.md");
       writeText(agentsPath, fs.readFileSync(agentsPath, "utf8").replace("Blocking for Acceptance: yes", "Blocking for Acceptance: missing"));
       const result = invokeValidator(fixture);
       assertFailure(result, "Missing binding session-delivery handoff instructions should fail validation.");
@@ -966,7 +989,7 @@ const tests: TestCase[] = [
     run: () => {
       const fixture = newLibraryFixture(`session-delivery-binding-${token.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`);
       addSessionDeliveryBindingFixture(fixture);
-      const agentsPath = path.join(fixture, "AGENTS.md");
+      const agentsPath = path.join(fixture, "REPO_AGENTS.md");
       writeText(agentsPath, fs.readFileSync(agentsPath, "utf8").replace(token, "[missing-binding-token]"));
       const result = invokeValidator(fixture);
       assertFailure(result, `Missing binding token should fail validation: ${token}`);
@@ -974,9 +997,12 @@ const tests: TestCase[] = [
     },
   })),
   {
-    name: "validator rejects missing reviewer Prevention Feedback contract",
+    name: "validator rejects reviewer that inlines Prevention Feedback block",
     run: () => {
       const fixture = newLibraryFixture("reviewer-prevention-feedback-contract");
+      const profilePath = path.join(fixture, "profiles", "all.json");
+      const profile = fs.readFileSync(profilePath, "utf8");
+      writeText(profilePath, profile.replace("\"demo-reviewer\"]", "\"demo-reviewer\", \"code-quality-reviewer\"]"));
       writeText(path.join(fixture, "global", "agents", "code-quality-reviewer.md"), lines([
         "---",
         "description: Reviews changed code quality.",
@@ -1004,9 +1030,20 @@ const tests: TestCase[] = [
         "",
         "You are a read-only code quality reviewer.",
         "",
-        "## Leaf Contract",
+        "## Contract Reference",
         "",
-        "Read/search-only leaf reviewer. No edits, fixes, commits/amends, merges, pushes, remote/destructive actions, `question`, tasks, skills, or nested agents. Stay in scope. Missing evidence -> exact main-session command/manual gate in `Actionable Continuation Items`; external domain -> `Needs external reviewer: <agent-name> required|optional`.",
+        "This reviewer follows the shared contract defined at `instructions/leaf-reviewer-agent-contract.md` (Leaf Contract, Feedback Ledger, Evidence Rules, Severity Scale, Prevention Feedback, Output Schema).",
+        "",
+        "## Prevention Feedback",
+        "",
+        "For each P0/P1 finding with non-`unknown` `Likely Root Cause`, include `Prevention Feedback`:",
+        "",
+        "- `Severity`: P0 | P1.",
+        "- `Recurrence Path`: existing instruction, skill, or agent that should have prevented recurrence, and why it missed.",
+        "- `Prevention Target`: `AGENTS.md` | `skill:<name>` | `agent:<name>` | `new-skill-required`.",
+        "- `Prevention Cost`: cheap | medium | expensive.",
+        "- `Draft Rule`: proposed rule text for main-session review, not a finalized edit.",
+        "- `Replay Evidence`: exact diff, fixture, command, or session context that should fail to reproduce after the rule is applied.",
         "",
         "## Output",
         "",
@@ -1019,8 +1056,8 @@ const tests: TestCase[] = [
       ]));
       appendReadmeAgentCatalogEntry(fixture, "- `code-quality-reviewer`: Code quality reviewer.");
       const result = invokeValidator(fixture);
-      assertFailure(result, "Missing reviewer Prevention Feedback section should fail validation.");
-      assertOutputContains(result, "Prevention Feedback", "Validation output should name the missing Prevention Feedback contract.");
+      assertFailure(result, "Inline Prevention Feedback block in reviewer should fail validation.");
+      assertOutputContains(result, "Prevention Feedback", "Validation output should name the inline Prevention Feedback block.");
     },
   },
   {
@@ -1169,7 +1206,7 @@ const tests: TestCase[] = [
     name: "validator rejects missing completion handoff",
     run: () => {
       const fixture = newLibraryFixture("missing-completion-handoff");
-      writeText(path.join(fixture, "AGENTS.md"), lines([
+      writeText(path.join(fixture, "REPO_AGENTS.md"), lines([
         "# Repository Instructions",
         "",
         "- Keep artifacts reusable.",
@@ -1182,7 +1219,7 @@ const tests: TestCase[] = [
     name: "validator rejects missing TypeScript-only policy",
     run: () => {
       const fixture = newLibraryFixture("missing-typescript-policy");
-      writeText(path.join(fixture, "AGENTS.md"), lines([
+      writeText(path.join(fixture, "REPO_AGENTS.md"), lines([
         "# Repository Instructions",
         "",
         "## Completion Handoff",
@@ -1207,7 +1244,7 @@ const tests: TestCase[] = [
     name: "validator rejects missing deterministic helper automation policy",
     run: () => {
       const fixture = newLibraryFixture("missing-helper-automation-policy");
-      writeText(path.join(fixture, "AGENTS.md"), lines([
+      writeText(path.join(fixture, "REPO_AGENTS.md"), lines([
         "# Repository Instructions",
         "",
         "## TypeScript Development",
@@ -1322,7 +1359,7 @@ const tests: TestCase[] = [
     name: "validator rejects routine question handoff",
     run: () => {
       const fixture = newLibraryFixture("routine-question-handoff");
-      writeText(path.join(fixture, "AGENTS.md"), lines([
+      writeText(path.join(fixture, "REPO_AGENTS.md"), lines([
         "# Repository Instructions",
         "",
         "## TypeScript Development",
@@ -1577,9 +1614,11 @@ const tests: TestCase[] = [
         throw new Error("Project AGENTS.md should install the Universal Development Loop template.");
       }
       const feedbackText = fs.readFileSync(path.join(project, "docs", "feedbacks", "README.md"), "utf8");
+      const kitFeedbackText = fs.readFileSync(path.join(root, "docs", "feedbacks", "README.md"), "utf8");
       if (!feedbackText.includes("Feedback Ledger") || !feedbackText.includes("complain")) {
         throw new Error("Project bootstrap should install the feedback ledger README.");
       }
+      assertEqual(feedbackText, kitFeedbackText, "Project bootstrap should copy the kit-level feedback README byte-for-byte.");
     },
   },
   {

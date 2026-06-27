@@ -2,30 +2,14 @@
 
 The kit uses one process for every project. Technology adapters change commands; they do not create new workflows.
 
-## Loop
+The canonical definition of the Universal Development Loop — step list, Token/Time Rules, Quality Defaults, and Output Shape — lives at `instructions/universal-development-loop.md`. All other artifacts in this repository and in downstream projects should reference that file instead of restating the loop.
 
-1. `Intake`: define goal, constraints, success criteria, non-goals, and likely validation.
-2. `Evidence`: inspect source, tests, schemas, scripts, config, generated artifacts, and live output before trusting prose.
-3. `Baseline Proof`: reproduce the bug or characterize current behavior before behavior changes when feasible.
-4. `Small Slice`: choose the smallest reviewable change that proves value.
-5. `Test First`: add/update a focused failing, acceptance, or characterization test before implementation unless infeasible.
-6. `Implement`: make the smallest correct change without unrelated cleanup.
-7. `Focused Validation`: run the nearest relevant validation first.
-8. `Review Gate`: run the relevant read-only reviewer when risk justifies it; feedback-ledger appends under `docs/feedbacks/**` through `complain` are the default write exception.
-9. `Final Validation`: broaden validation when boundaries are affected.
-10. `Handoff`: report changed files, evidence, validation, residual risks, and ready-to-land status.
-11. `Process Improvement`: capture current-session friction with `complain`; turn accumulated patterns into helpers, validators, fixtures, reports, or templates.
+If this kit doc and the canonical file drift, `tools/validate-library.ts` will fail the build until the divergence is reconciled. Update the canonical file and let this pointer point back to it.
 
-## Proportionality
+## What Changes Here
 
-- Tiny task: use only intake, targeted evidence, change, focused validation, and handoff.
-- Behavior change: include baseline proof and test-first evidence.
-- Risky change: include planning, reviewer gates, and broader validation.
-- Broad independent work: use bounded fan-out only when reconciliation costs less than serial work.
+- New kit-policy notes about the loop (e.g. proportionality, non-goals) belong in this file or in `docs/`.
+- Step text, token/time rules, quality defaults, and output shape belong only in `instructions/universal-development-loop.md`.
+- Project-level templates, reviewer agents, and downstream `AGENTS.md` files should point at the canonical file rather than duplicating the step list.
 
-## Non-Goals
-
-- Do not create technology-specific workflows.
-- Do not run every reviewer by default.
-- Do not read the whole repository before targeted discovery.
-- Do not add abstractions for hypothetical future variants.
+See `instructions/universal-development-loop.md` for the contract.

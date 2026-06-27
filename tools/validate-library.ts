@@ -56,11 +56,15 @@ const preventionFeedbackRequiredText = [
   "Draft Rule",
   "Replay Evidence",
 ];
+const reviewerContractReferenceText = [
+  "## Contract Reference",
+  "instructions/leaf-reviewer-agent-contract.md",
+];
 const agentTextContracts: TextContract[] = [
   ...preventionFeedbackReviewerFiles.map((fileName) => ({
     fileName,
-    label: `${fileName} must define Prevention Feedback output contract`,
-    requiredText: preventionFeedbackRequiredText,
+    label: `${fileName} must reference the shared Prevention Feedback contract via ## Contract Reference`,
+    requiredText: reviewerContractReferenceText,
   })),
   {
     fileName: "session-delivery-reviewer.md",
@@ -691,11 +695,17 @@ function validateAgents(root: string): string[] {
         addError(`Agent permission must set ${permission}: deny: ${file}`);
       }
     }
-    for (const required of ["## Leaf Contract", "No source/config/instruction edits", "Needs external reviewer", "## Feedback Ledger", "docs/feedbacks", "`complain`", "`Findings`: ordered by severity", "`Residual Risks`", "`Actionable Continuation Items`"]) {
+    for (const required of ["## Contract Reference", "instructions/leaf-reviewer-agent-contract.md", "`Findings`: ordered by severity", "`Residual Risks`", "`Actionable Continuation Items`"]) {
       requireTextContains(text, required, "Reusable reviewer leaf contract", file);
     }
     if (text.includes("## Orchestration") || text.includes("Do not modify files.")) {
       addError(`Reusable reviewer agent must use the compact Leaf Contract instead of old boilerplate: ${file}`);
+    }
+    if (text.includes("## Leaf Contract\n") || text.includes("## Leaf Contract\r\n")) {
+      addError(`Reusable reviewer agent must reference the shared contract via ## Contract Reference, not inline the Leaf Contract body: ${file}`);
+    }
+    if (text.includes("## Prevention Feedback\n") || text.includes("## Prevention Feedback\r\n")) {
+      addError(`Reusable reviewer agent must reference the shared Prevention Feedback block via ## Contract Reference, not inline it: ${file}`);
     }
     validateTextContracts(file, text, agentTextContracts);
   }
@@ -731,46 +741,51 @@ function validateReadme(root: string, skillNames: string[], agentNames: string[]
   compareCatalog("Instruction template", instructionNames, getCatalogEntries(readmeText, "Instruction Templates", "Porting Notes", readmePath), readmePath);
 }
 
-function validateAgentsMd(root: string): void {
-  const agentsPath = path.join(root, "AGENTS.md");
+function validateRepoAgentsMd(root: string): void {
+  const agentsPath = path.join(root, "REPO_AGENTS.md");
   if (!fileExists(agentsPath)) {
-    addError(`Missing AGENTS.md: ${agentsPath}`);
+    addError(`Missing REPO_AGENTS.md: ${agentsPath}`);
     return;
   }
 
-  const agentsText = readText(agentsPath);
-  requireTextContains(agentsText, "## Autonomous Work Contract", "AGENTS.md autonomous work contract", agentsPath);
-  requireTextContains(agentsText, "Ask the user only", "AGENTS.md autonomous work contract", agentsPath);
-  requireTextContains(agentsText, "## Completion Handoff", "AGENTS.md completion handoff contract", agentsPath);
-  requireTextContains(agentsText, "`question`", "AGENTS.md completion handoff contract", agentsPath);
-  requireTextContains(agentsText, "(Recommended)", "AGENTS.md completion handoff contract", agentsPath);
-  requireTextContains(agentsText, "Suggested Next Options", "AGENTS.md completion handoff contract", agentsPath);
-  requireTextContains(agentsText, "Actionable Continuation Items", "AGENTS.md completion handoff contract", agentsPath);
-  requireTextContains(agentsText, "## TypeScript Development", "AGENTS.md TypeScript-only development policy", agentsPath);
-  requireTextContains(agentsText, "TypeScript", "AGENTS.md TypeScript-only development policy", agentsPath);
-  requireTextContains(agentsText, "PowerShell", "AGENTS.md TypeScript-only development policy", agentsPath);
-  requireTextContains(agentsText, "Python", "AGENTS.md TypeScript-only development policy", agentsPath);
-  requireTextContains(agentsText, "JavaScript", "AGENTS.md TypeScript-only development policy", agentsPath);
-  requireTextContains(agentsText, "## Deterministic Helper Automation", "AGENTS.md deterministic helper automation policy", agentsPath);
-  requireTextContains(agentsText, "repetitive, evidence-heavy", "AGENTS.md deterministic helper automation policy", agentsPath);
-  requireTextContains(agentsText, "no hidden heuristics", "AGENTS.md deterministic helper automation policy", agentsPath);
-  requireTextContains(agentsText, "explicit inputs", "AGENTS.md deterministic helper automation policy", agentsPath);
-  requireTextContains(agentsText, "explicit outputs", "AGENTS.md deterministic helper automation policy", agentsPath);
-  requireTextContains(agentsText, "privacy-safe output", "AGENTS.md deterministic helper automation policy", agentsPath);
-  requireTextContains(agentsText, "fuzzy scoring", "AGENTS.md deterministic helper automation policy", agentsPath);
-  requireTextContains(agentsText, "model-like summarization", "AGENTS.md deterministic helper automation policy", agentsPath);
-  for (const fallback of ["unknown", "unreadable", "unsupported", "blocked"]) {
-    requireTextContains(agentsText, fallback, "AGENTS.md deterministic helper automation fallback policy", agentsPath);
+  const legacyAgentsPath = path.join(root, "AGENTS.md");
+  if (fileExists(legacyAgentsPath)) {
+    addError(`Root-level AGENTS.md must be renamed to REPO_AGENTS.md to keep the runtime instruction file (global/AGENTS.md) unambiguous: ${legacyAgentsPath}`);
   }
-  requireTextContains(agentsText, "npm run instruction:feedback -- --add", "AGENTS.md prevention feedback ledger handoff", agentsPath);
-  requireTextContains(agentsText, "applied -> replayed -> resolved", "AGENTS.md replay gate policy", agentsPath);
-  requireTextContains(agentsText, "## Feedback Ledger", "AGENTS.md feedback ledger policy", agentsPath);
-  requireTextContains(agentsText, "complain", "AGENTS.md feedback ledger policy", agentsPath);
-  requireTextContains(agentsText, "docs/feedbacks", "AGENTS.md feedback ledger policy", agentsPath);
-  requireTextContains(agentsText, "Recurrence: unknown", "AGENTS.md feedback ledger policy", agentsPath);
+
+  const agentsText = readText(agentsPath);
+  requireTextContains(agentsText, "## Autonomous Work Contract", "REPO_AGENTS.md autonomous work contract", agentsPath);
+  requireTextContains(agentsText, "Ask the user only", "REPO_AGENTS.md autonomous work contract", agentsPath);
+  requireTextContains(agentsText, "## Completion Handoff", "REPO_AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "`question`", "REPO_AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "(Recommended)", "REPO_AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "Suggested Next Options", "REPO_AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "Actionable Continuation Items", "REPO_AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "## TypeScript Development", "REPO_AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "TypeScript", "REPO_AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "PowerShell", "REPO_AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "Python", "REPO_AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "JavaScript", "REPO_AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "## Deterministic Helper Automation", "REPO_AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "repetitive, evidence-heavy", "REPO_AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "no hidden heuristics", "REPO_AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "explicit inputs", "REPO_AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "explicit outputs", "REPO_AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "privacy-safe output", "REPO_AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "fuzzy scoring", "REPO_AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "model-like summarization", "REPO_AGENTS.md deterministic helper automation policy", agentsPath);
+  for (const fallback of ["unknown", "unreadable", "unsupported", "blocked"]) {
+    requireTextContains(agentsText, fallback, "REPO_AGENTS.md deterministic helper automation fallback policy", agentsPath);
+  }
+  requireTextContains(agentsText, "npm run instruction:feedback -- --add", "REPO_AGENTS.md prevention feedback ledger handoff", agentsPath);
+  requireTextContains(agentsText, "applied -> replayed -> resolved", "REPO_AGENTS.md replay gate policy", agentsPath);
+  requireTextContains(agentsText, "## Feedback Ledger", "REPO_AGENTS.md feedback ledger policy", agentsPath);
+  requireTextContains(agentsText, "complain", "REPO_AGENTS.md feedback ledger policy", agentsPath);
+  requireTextContains(agentsText, "docs/feedbacks", "REPO_AGENTS.md feedback ledger policy", agentsPath);
+  requireTextContains(agentsText, "Recurrence: unknown", "REPO_AGENTS.md feedback ledger policy", agentsPath);
 
   if (/after (a )?non-trivial user-visible work( cycle)?,? (the main session offers|offer|use the built-in `?question`?|before stopping)/i.test(agentsText)) {
-    addError(`AGENTS.md must not require routine post-task question handoff: ${agentsPath}`);
+    addError(`REPO_AGENTS.md must not require routine post-task question handoff: ${agentsPath}`);
   }
 }
 
@@ -874,7 +889,6 @@ function validateDevKitContract(root: string): void {
   requireFile(root, "instructions/universal-development-loop.md", "Universal Development Loop instruction");
   requireFile(root, "templates/project/AGENTS.md", "project AGENTS.md template");
   requireFile(root, "templates/project/opencode.json", "project opencode.json template");
-  requireFile(root, "templates/project/docs/feedbacks/README.md", "project feedback ledger template");
   requireFile(root, "templates/project/validation.md", "project validation template");
   requireFile(root, "templates/project/adapter.json", "project adapter template");
   requireFile(root, "templates/ci/github-actions.yml", "CI template");
@@ -904,10 +918,7 @@ function validateDevKitContract(root: string): void {
 
   const projectFeedbackTemplate = path.join(root, "templates", "project", "docs", "feedbacks", "README.md");
   if (fileExists(projectFeedbackTemplate)) {
-    const text = readText(projectFeedbackTemplate);
-    for (const required of ["Feedback Ledger", "complain", "Recurrence: unknown", "raw private prompts", "large logs", "personal blame"]) {
-      requireTextContains(text, required, "project feedback ledger template", projectFeedbackTemplate);
-    }
+    addError(`Project feedback README template must be deleted; init-project copies the kit-level docs/feedbacks/README.md directly: ${projectFeedbackTemplate}`);
   }
 
   const adapterTemplate = path.join(root, "templates", "project", "adapter.json");
@@ -1277,6 +1288,53 @@ function jsonReplacementForAutomationMarkdown(relative: string): string | null {
   return null;
 }
 
+function validateUniversalDevelopmentLoopSingleSource(relative: string, text: string, file: string): void {
+  const canonicalRelative = "instructions/universal-development-loop.md";
+  if (relative === canonicalRelative) {
+    return;
+  }
+
+  const stepNames = [
+    "Intake",
+    "Evidence",
+    "Baseline Proof",
+    "Small Slice",
+    "Test First",
+    "Implement",
+    "Focused Validation",
+    "Review Gate",
+    "Final Validation",
+    "Handoff",
+    "Process Improvement",
+  ];
+
+  const numberedStepPattern = /^\s*\d+\.\s+`([A-Z][A-Za-z ]+)`:/;
+  const numberedSteps = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(numberedStepPattern);
+    if (match && stepNames.includes(match[1])) {
+      numberedSteps.add(match[1]);
+    }
+  }
+  if (numberedSteps.size >= 6) {
+    addError(`Universal Development Loop step list must only appear in ${canonicalRelative}; restated step list found in ${relative} (${numberedSteps.size} canonical steps). Replace with a pointer paragraph to the canonical file.`);
+  }
+
+  const arrowLinePattern = /(?:^|\s)([A-Z][A-Za-z ]+)\s*->\s*([A-Z][A-Za-z ]+)(?:\s*->\s*([A-Z][A-Za-z ]+))*/g;
+  const arrowChainSteps = new Set<string>();
+  for (const match of text.matchAll(arrowLinePattern)) {
+    for (const segment of match[0].split("->")) {
+      const trimmed = segment.replace(/^\s+|\s+$/g, "");
+      if (stepNames.includes(trimmed)) {
+        arrowChainSteps.add(trimmed);
+      }
+    }
+  }
+  if (arrowChainSteps.size >= 6) {
+    addError(`Universal Development Loop inline chain must only appear in ${canonicalRelative}; restated chain found in ${relative} (${arrowChainSteps.size} canonical steps). Replace with a pointer paragraph to the canonical file.`);
+  }
+}
+
 function validateMarkdownFile(root: string, file: string, forbiddenAnchors: string[]): void {
   const raw = fs.readFileSync(file, "utf8");
   const lines = raw.split(/\r?\n/);
@@ -1299,9 +1357,11 @@ function validateMarkdownFile(root: string, file: string, forbiddenAnchors: stri
     }
   }
 
+  validateUniversalDevelopmentLoopSingleSource(relative, text, file);
+
   const isInstructionArtifact = /^(?:global|\.opencode)\/(skills|agents)\//.test(relative) ||
     /^instructions\//.test(relative) ||
-    ["AGENTS.md", "README.md"].includes(relative);
+    ["AGENTS.md", "REPO_AGENTS.md", "README.md"].includes(relative);
   if (isInstructionArtifact) {
     for (const reference of legacyToolingReferences) {
       if (text.includes(reference)) {
@@ -1342,7 +1402,7 @@ function validateImplementationWorkerRouting(root: string, agentNames: string[])
   }
 
   for (const relative of [
-    "AGENTS.md",
+    "REPO_AGENTS.md",
     "global/AGENTS.md",
     "instructions/reusable-project-agent-instructions.md",
     "templates/project/AGENTS.md",
@@ -1377,7 +1437,7 @@ function validateSessionDeliveryBinding(root: string, agentNames: string[]): voi
   }
 
   for (const relative of [
-    "AGENTS.md",
+    "REPO_AGENTS.md",
     "global/AGENTS.md",
     "instructions/reusable-project-agent-instructions.md",
     "instructions/universal-development-loop.md",
@@ -1413,7 +1473,7 @@ function main(): void {
   validateSessionDeliveryBinding(root, agentNames);
   validateOpenCodeConfigFiles(root);
   validateReadme(root, skillNames, agentNames, instructionNames);
-  validateAgentsMd(root);
+  validateRepoAgentsMd(root);
   validateInstructionFeedbackContracts(root);
   validateInstallerConfigDirModel(root);
 

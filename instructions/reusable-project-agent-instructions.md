@@ -4,7 +4,7 @@ Use this template as a starting point for a project-level `AGENTS.md`. Keep only
 
 ## Universal Development Loop
 
-Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> Small Slice -> Test First -> Implement -> Focused Validation -> Review Gate -> Final Validation -> Handoff -> Process Improvement`.
+Follow the canonical Universal Development Loop defined at `instructions/universal-development-loop.md`. Do not restate the step list in this template; every project that includes this content consumes the canonical contract through that reference.
 
 - Technology-specific commands and constraints adapt the loop; they do not create separate workflows.
 - Start broad work with a deterministic project inventory, targeted search, or repository-native command before reading large file sets.

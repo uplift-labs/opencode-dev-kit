@@ -2,6 +2,8 @@
 
 Quality gates make the Universal Development Loop executable and reviewable.
 
+The canonical loop definition lives at `instructions/universal-development-loop.md`; this document only describes the gate matrix and adapter commands that operate on top of it.
+
 ## Default Gates
 
 | Gate | When | Evidence |
